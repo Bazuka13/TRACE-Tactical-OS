@@ -1,0 +1,8 @@
+match_id,tournament,split
+match01,A,train
+match02,A,train
+match03,B,train
+match41,D,val
+match42,D,val
+match46,E,test
+match47,E,test

@@ -1,0 +1,9 @@
+.venv/
+data/*
+!data/maps/
+!data/splits.csv
+models/*
+node_modules/
+__pycache__/
+*.duckdb
+ingest_errors.log
