@@ -1,12 +1,29 @@
 # backend/gnn_utils.py
+import sys
+from pathlib import Path
+
+backend_dir = str(Path(__file__).resolve().parent)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
 import numpy as np
 import pandas as pd
-import torch
-import torch.nn as nn
-import torch.nn.functional as Fn
-from torch_geometric.nn import GATConv, global_mean_pool
 from config import FEATS
 from maps import units_to_norm
+
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as Fn
+    from torch_geometric.nn import GATConv, global_mean_pool
+    HAS_TORCH = True
+except (ImportError, ModuleNotFoundError):
+    torch = None
+    nn = None
+    Fn = None
+    GATConv = None
+    global_mean_pool = None
+    HAS_TORCH = False
 
 WINDOW = 50  # 50 frames, about 5 seconds
 
@@ -15,7 +32,9 @@ NODE_FEATS = ['pos_x', 'pos_y', 'yaw_sin', 'yaw_cos', 'hp_pct', 'armor_pct',
               'weapon_dps', 'speed', 'degree', 'team']
 
 
-class TacticalSTGNN(nn.Module):
+BaseModule = nn.Module if HAS_TORCH else object
+
+class TacticalSTGNN(BaseModule):
     def __init__(self, in_dim=10):
         super().__init__()
         self.gat1 = GATConv(in_dim, 64, heads=3, concat=True)  # 10 -> 192
