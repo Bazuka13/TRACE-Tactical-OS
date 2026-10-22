@@ -11,16 +11,16 @@ from maps import load_walls, units_per_norm
 from features import CELLS, GRID, blocked_by_walls
 from explain import load_models, Explainers, threat_sentence, win_sentence
 
-app = FastAPI()
+app = FastAPI(title="Esports Tactical OS Replay Server")
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'],
                    allow_headers=['*'])
 
-# Models will be lazily loaded or loaded at startup
+# Models loaded lazily
 M = None
 EXPL = None
 USES_GNN = False
 
-DG = 32  # the danger overlay uses a coarser 32 x 32 grid (speed)
+DG = 32  # the danger overlay uses a coarser 32 x 32 grid for speed
 _dx, _dy = np.meshgrid((np.arange(DG) + 0.5) / DG, (np.arange(DG) + 0.5) / DG)
 DCELLS = np.c_[_dx.ravel(), _dy.ravel()]
 
@@ -35,12 +35,21 @@ def get_models():
 
 
 @app.get('/matches')
-def matches():
-    return sorted(p.name.replace('_players.parquet', '') for p in FEATS.glob('*_players.parquet'))
+def get_matches():
+    files = sorted(p.name.replace('_players.parquet', '') for p in FEATS.glob('*_players.parquet'))
+    return files
+
+
+@app.get('/matches/{match_id}/rounds')
+def get_match_rounds(match_id: str):
+    pl_path = FEATS / (match_id + '_players.parquet')
+    if not pl_path.exists():
+        return {'rounds': []}
+    pl = pd.read_parquet(pl_path, columns=['round_num'])
+    return {'rounds': sorted(int(r) for r in pl.round_num.unique())}
 
 
 def territory_grid(pos, alive, team):
-    # each cell belongs to the nearest living player's team (0 = T, 1 = CT, -1 = nobody)
     idx = np.flatnonzero(alive)
     if len(idx) == 0:
         return np.full((GRID, GRID), -1, dtype=np.int8)
@@ -49,7 +58,6 @@ def territory_grid(pos, alive, team):
 
 
 def danger_grid(pos, alive, threat, walls, lam):
-    # DangerScore(cell) = sum over endangered players j of threat_j * can_j_see_cell * exp(-lam * distance)
     grid = np.zeros(len(DCELLS))
     for j in np.flatnonzero(alive & (threat >= 0.2)):
         p = np.repeat(pos[j][None], len(DCELLS), axis=0)
@@ -77,13 +85,13 @@ def predict_frame(g, trow):
     threat = np.zeros(len(g))
     if alive.any():
         raw = models['cb'].predict_proba(g.loc[alive, models['a_cols']])[:, 1]
-        threat[alive] = models['cb_cal'].transform(raw)  # calibrated danger, 0..1
+        threat[alive] = models['cb_cal'].transform(raw)
     xw = trow[models['w_cols']].to_frame().T.astype(float)
     wp = float(np.clip(models['w_cal'].transform(models['lg'].predict(xw))[0], 0, 1))
     return alive, threat, wp, xw
 
 
-def compute_xai(Xp, slots, probs, xw, wp):  # runs in a background thread
+def compute_xai(Xp, slots, probs, xw, wp):
     _, expl, _ = get_models()
     players = {}
     if len(Xp):
@@ -111,6 +119,19 @@ async def replay(ws: WebSocket, match_id: str, round_num: int):
     tasks = set()
     loop = asyncio.get_running_loop()
 
+    grouped_frames = list(pl.groupby('tick'))
+    total_frames = len(grouped_frames)
+
+    # Initial handshake with map geometry and frame count
+    await ws.send_text(orjson.dumps({
+        'type': 'meta',
+        'match_id': match_id,
+        'round_num': round_num,
+        'map': map_name,
+        'total_frames': total_frames,
+        'walls': [[[float(pt[0]), float(pt[1])] for pt in w] for w in walls]
+    }).decode())
+
     async def refresh(*args):
         busy['v'] = True
         try:
@@ -119,11 +140,11 @@ async def replay(ws: WebSocket, match_id: str, round_num: int):
             busy['v'] = False
 
     try:
-        for i, (tick, g) in enumerate(pl.groupby('tick')):
+        for i, (tick, g) in enumerate(grouped_frames):
             started = loop.time()
             trow = tm.loc[tick]
             alive, threat, wp, xw = predict_frame(g, trow)
-            if i % 5 == 0 and not busy['v']:  # SHAP every 5 frames, never blocking stream
+            if i % 5 == 0 and not busy['v']:
                 t = asyncio.create_task(refresh(g.loc[alive, models['a_cols']],
                                                 g.slot.to_numpy()[alive],
                                                 threat[alive], xw, wp))
@@ -140,13 +161,23 @@ async def replay(ws: WebSocket, match_id: str, round_num: int):
                     'y': round(float(p.pos_y), 4),
                     'yaw': round(float(p.yaw), 1),
                     'hp': round(float(p.hp_pct), 2),
+                    'armor': round(float(getattr(p, 'armor_pct', 0.0)), 2),
+                    'weapon_dps': round(float(getattr(p, 'weapon_dps', 0.0)), 2),
+                    'speed': round(float(getattr(p, 'speed', 0.0)), 1),
                     'alive': bool(p.is_alive),
                     'threat': round(float(threat[k]), 3),
+                    'los_bits': int(getattr(p, 'los_bits', 0)),
+                    'is_isolated': int(getattr(p, 'is_isolated', 0)),
+                    'has_crossfire': int(getattr(p, 'has_crossfire_partner', 0)),
                     'why': cache['players'].get(int(p.slot), {}).get('text', '')
                 }
                 for k, p in enumerate(g.itertuples())
             ]
+
             payload = {
+                'type': 'frame',
+                'frame_idx': i,
+                'total_frames': total_frames,
                 'tick': int(tick),
                 'map': map_name,
                 'clock': float(trow['round_clock_s']),
@@ -155,10 +186,15 @@ async def replay(ws: WebSocket, match_id: str, round_num: int):
                 'danger': np.round(danger_grid(pos, alive, threat, walls, lam), 2).tolist(),
                 'win_prob': round(wp, 4),
                 'why_win': cache['win']['text'],
-                'bomb_planted': int(trow['bomb_planted'])
+                'bomb_planted': int(trow['bomb_planted']),
+                'att_power': round(float(trow.get('att_power', 0.0)), 2),
+                'def_power': round(float(trow.get('def_power', 0.0)), 2),
+                'att_alive': int(trow.get('att_alive', (alive & (team == 0)).sum())),
+                'def_alive': int(trow.get('def_alive', (alive & (team == 1)).sum())),
+                'att_territory': round(float(trow.get('att_territory', 0.5)), 3)
             }
             await ws.send_text(orjson.dumps(payload).decode())
-            await asyncio.sleep(max(0.0, DT - (loop.time() - started)))  # ~10.7 frames per sec
+            await asyncio.sleep(max(0.0, DT - (loop.time() - started)))
         await ws.send_text(orjson.dumps({'done': True}).decode())
     except WebSocketDisconnect:
         pass

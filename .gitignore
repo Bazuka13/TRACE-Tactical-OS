@@ -8,3 +8,5 @@ __pycache__/
 ingest_errors.log
 catboost_info/
 *.png
+dist/
+frontend/dist/
