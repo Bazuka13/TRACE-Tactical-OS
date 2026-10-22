@@ -1,0 +1,26 @@
+# Caddyfile - Reverse Proxy & Static Web Gateway (Section 9.6)
+:80 {
+    encode gzip
+
+    # WebSocket replay stream multiplexer
+    handle /ws/* {
+        reverse_proxy api:8000
+    }
+
+    # REST endpoints
+    handle /matches* {
+        reverse_proxy api:8000
+    }
+
+    # Uptime health monitor
+    handle /health {
+        reverse_proxy api:8000
+    }
+
+    # Static web app files with SPA fallback
+    handle {
+        root * /srv/web
+        file_server
+        try_files {path} /index.html
+    }
+}

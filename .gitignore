@@ -10,3 +10,6 @@ catboost_info/
 *.png
 dist/
 frontend/dist/
+deploy_data/
+scratch/
+

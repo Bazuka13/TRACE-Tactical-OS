@@ -90,8 +90,17 @@ type TacticalLogItem = {
 };
 
 const SIZE = 800;
-const WS_BASE = 'ws://localhost:8000/ws/replay/';
-const API_BASE = 'http://localhost:8000';
+const envWs = import.meta.env.VITE_WS_URL;
+const WS_BASE = envWs
+  ? envWs.startsWith('/')
+    ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${envWs}`
+    : envWs
+  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8000/ws/replay/`;
+
+const envApi = import.meta.env.VITE_API_URL;
+const API_BASE = envApi !== undefined && envApi !== ''
+  ? envApi
+  : `${window.location.protocol === 'https:' ? 'https:' : 'http:'}//${window.location.hostname}:8000`;
 
 const threatColor = (t: number) => {
   if (t >= 0.6) return '#ef4444';

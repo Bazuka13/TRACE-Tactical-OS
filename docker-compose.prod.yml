@@ -1,0 +1,27 @@
+# docker-compose.prod.yml - Production Deployment Orchestration (Section 9.6)
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      - ALLOWED_ORIGINS=*
+      - MAX_CLIENTS=5
+    volumes:
+      - ./deploy_data/data:/app/data
+      - ./deploy_data/models:/app/models
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./frontend/dist:/srv/web
+      - caddy_data:/data
+    depends_on:
+      - api
+
+volumes:
+  caddy_data:

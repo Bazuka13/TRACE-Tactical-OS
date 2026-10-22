@@ -1,5 +1,7 @@
 # backend/server.py run: uvicorn server:app --app-dir backend --port 8000
 import asyncio
+import os
+import re
 import numpy as np
 import orjson
 import pandas as pd
@@ -11,9 +13,24 @@ from maps import load_walls, units_per_norm
 from features import CELLS, GRID, blocked_by_walls
 from explain import load_models, Explainers, threat_sentence, win_sentence
 
+ALLOWED = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', '*').split(',') if o.strip()]
+MAX_CLIENTS = int(os.environ.get('MAX_CLIENTS', '5'))
+SAFE_ID = re.compile(r'^[A-Za-z0-9_-]{1,128}$')
+active = {'n': 0}
+
 app = FastAPI(title="Esports Tactical OS - Pro Analytics Server")
-app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'],
-                   allow_headers=['*'])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED if '*' not in ALLOWED else ['*'],
+    allow_methods=['GET'],
+    allow_headers=['*'],
+)
+
+
+@app.get('/health')
+def health():
+    return {'ok': True, 'clients_active': active['n'], 'max_clients': MAX_CLIENTS}
+
 
 # Models loaded lazily
 M = None
@@ -372,7 +389,16 @@ def get_initial_frame(match_id: str, round_num: int):
 
 @app.websocket('/ws/replay/{match_id}/{round_num}')
 async def replay(ws: WebSocket, match_id: str, round_num: int):
+    origin = ws.headers.get('origin')
+    if origin is not None and '*' not in ALLOWED and origin not in ALLOWED:
+        await ws.close(code=1008)
+        return
+    if not SAFE_ID.match(match_id) or active['n'] >= MAX_CLIENTS:
+        await ws.close(code=1008)
+        return
+
     await ws.accept()
+    active['n'] += 1
     try:
         models, _, _ = get_models()
         pl, tm = load_round(match_id, round_num)
@@ -380,6 +406,7 @@ async def replay(ws: WebSocket, match_id: str, round_num: int):
     except Exception as e:
         await ws.send_text(orjson.dumps({'error': str(e)}).decode())
         await ws.close()
+        active['n'] -= 1
         return
 
     walls = load_walls(map_name)
@@ -467,5 +494,6 @@ async def replay(ws: WebSocket, match_id: str, round_num: int):
     except WebSocketDisconnect:
         pass
     finally:
+        active['n'] = max(0, active['n'] - 1)
         stream_active = False
         listener_task.cancel()
