@@ -175,6 +175,23 @@ def parse_demo(demo_path):
         logging.warning('%s: dropped %d rows with NaN', match_id, n_before - len(df))
     df = add_team_power(df).sort_values(['round_num', 'tick', 'slot']).reset_index(drop=True)
 
+    # Fix tick gaps: some demos have occasional server-dropped ticks.
+    # Re-index each (round_num, slot) to the full tick grid and forward-fill.
+    expected_ticks = frames[['round_num', 'tick']].drop_duplicates()
+    slots = df.slot.unique()
+    full_idx = expected_ticks.merge(pd.DataFrame({'slot': slots}), how='cross')
+    df = full_idx.merge(df, on=['round_num', 'tick', 'slot'], how='left')
+    df = df.sort_values(['round_num', 'tick', 'slot']).reset_index(drop=True)
+    # Forward-fill per (round_num, slot): carry last known state for dropped ticks
+    fill_cols = [c for c in df.columns if c not in ('round_num', 'tick', 'slot')]
+    df[fill_cols] = df.groupby(['round_num', 'slot'])[fill_cols].ffill()
+    # Backward-fill any NaN at the start of a round (rare: first tick dropped)
+    df[fill_cols] = df.groupby(['round_num', 'slot'])[fill_cols].bfill()
+    df = df.dropna(subset=['pos_x', 'pos_y'])
+    # Re-derive round_clock_s from the tick grid (it may have been NaN for filled rows)
+    round_starts = frames.groupby('round_num').tick.min().to_dict()
+    df['round_clock_s'] = df.apply(lambda r: (r.tick - round_starts[r.round_num]) / TICK_RATE, axis=1)
+
     # smoke grenades: each lasts about 18 seconds, radius about 144 game units
     try:
         sm = parser.parse_event('smokegrenade_detonate')
