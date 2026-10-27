@@ -113,6 +113,24 @@ def win_sentence(wp, reasons):
     return 'Attack win chance %d%% because: %s' % (round(100 * wp), '; '.join(parts))
 
 
+def tactical_directive(slot, p, reasons):
+    """Generates actionable tactical coaching advice based on primary danger drivers."""
+    if p < 0.25:
+        return "Position stable: Maintain crossfire angles and preserve zone control."
+    top_driver = reasons[0]['text'] if reasons else ''
+    if 'No teammate nearby' in top_driver or 'isolated' in top_driver.lower():
+        return "FALL BACK: Regroup immediately or request trade support."
+    elif 'Hidden enemies' in top_driver:
+        return "CAUTION: Unchecked close angles; deploy flashbang or shoulder-peek."
+    elif 'Enemies in direct sightline' in top_driver:
+        return "ENGAGEMENT: Multiple enemy sightlines; seek hard cover."
+    elif 'Closer to enemies' in top_driver:
+        return "TERRITORY RISK: Overextended into enemy zone; reposition toward team."
+    elif p >= 0.6:
+        return "CRITICAL THREAT: Ambush imminent; deploy smoke/flash and disengage."
+    return "Hold posture and verify flank clearance with radar."
+
+
 if __name__ == '__main__':
     from dataset import load_labeled
     M = load_models()

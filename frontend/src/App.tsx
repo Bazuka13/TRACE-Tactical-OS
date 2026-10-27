@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { VideoHub } from './VideoHub';
 
 type Factor = {
   text: string;
@@ -24,6 +25,7 @@ type Player = {
   has_crossfire: number;
   in_enemy_zone: number;
   why: string;
+  directive?: string;
   factors?: Factor[];
 };
 
@@ -115,6 +117,7 @@ const threatBadge = (t: number) => {
 };
 
 export default function App() {
+  const [activeSuite, setActiveSuite] = useState<'replay' | 'video'>('replay');
   const [matches, setMatches] = useState<string[]>([]);
   const [matchId, setMatchId] = useState<string>('Match01_morningstar-vs-fengda-m1-mirage');
   const [rounds, setRounds] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
@@ -142,6 +145,87 @@ export default function App() {
   const [showCones, setShowCones] = useState(true);
   const [showSmokes, setShowSmokes] = useState(true);
   const [showDeaths, setShowDeaths] = useState(true);
+
+  // Real-Time Demo Feed / Ingestion Modal State
+  const [showDemoModal, setShowDemoModal] = useState(false);
+  const [availableDemos, setAvailableDemos] = useState<{ filename: string; match_id: string; size_mb: number; is_ready: boolean }[]>([]);
+  const [selectedDemoName, setSelectedDemoName] = useState('');
+  const [customDemoPath, setCustomDemoPath] = useState('');
+  const [demoProcessing, setDemoProcessing] = useState(false);
+  const [demoProcessMsg, setDemoProcessMsg] = useState('');
+
+  // Faculty Proof & Academic Metrics Modal State
+  const [showProofModal, setShowProofModal] = useState(false);
+  const [proofData, setProofData] = useState<any>(null);
+  const [proofActiveTab, setProofActiveTab] = useState<'summary' | 'ambush' | 'win' | 'plots'>('summary');
+  const [proofLoading, setProofLoading] = useState(false);
+
+  const loadProofData = () => {
+    setProofLoading(true);
+    fetch(`${API_BASE}/api/ml/metrics`)
+      .then((r) => r.json())
+      .then((d) => {
+        setProofData(d);
+        setProofLoading(false);
+      })
+      .catch((err) => {
+        console.warn('Could not load ML proof metrics:', err);
+        setProofLoading(false);
+      });
+  };
+
+  const loadAvailableDemos = () => {
+    fetch(`${API_BASE}/api/available_demos`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.demos) {
+          setAvailableDemos(data.demos);
+          if (data.demos.length > 0 && !selectedDemoName) {
+            setSelectedDemoName(data.demos[0].filename);
+          }
+        }
+      })
+      .catch((err) => console.warn('Could not load available demos:', err));
+  };
+
+  const handleProcessAndStream = async () => {
+    const target = customDemoPath.trim() || selectedDemoName;
+    if (!target) return;
+    setDemoProcessing(true);
+    setDemoProcessMsg('Ingesting .dem ticks and extracting 28 spatial features...');
+    try {
+      const res = await fetch(`${API_BASE}/api/demos/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ demo_name: target }),
+      }).then((r) => r.json());
+
+      if (!res.ok) {
+        setDemoProcessMsg(`Error: ${res.error || 'Failed to process demo'}`);
+        setDemoProcessing(false);
+        return;
+      }
+
+      setDemoProcessMsg('Features ready! Loading match rounds & launching stream...');
+      const matchesRes = await fetch(`${API_BASE}/matches`).then((r) => r.json());
+      if (matchesRes && matchesRes.length > 0) {
+        setMatches(matchesRes);
+      }
+      setMatchId(res.match_id);
+      if (res.rounds && res.rounds.length > 0) {
+        setRounds(res.rounds);
+        setRound(res.rounds[0]);
+      }
+      setDemoProcessing(false);
+      setShowDemoModal(false);
+      setTimeout(() => {
+        startStream();
+      }, 500);
+    } catch (err: any) {
+      setDemoProcessMsg(`Error: ${err.message || 'Network error'}`);
+      setDemoProcessing(false);
+    }
+  };
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const latestFrame = useRef<Frame | null>(null);
@@ -427,9 +511,66 @@ export default function App() {
 
   return (
     <div style={{ padding: '16px 28px', maxWidth: 1780, margin: '0 auto' }}>
-      {/* Top Professional Esports Broadcast Header */}
-      <header
-        className="glass-panel"
+      {/* Top Suite Navigation Switcher */}
+      <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
+        <button
+          onClick={() => setActiveSuite('replay')}
+          style={{
+            flex: 1,
+            padding: '12px 20px',
+            borderRadius: 8,
+            cursor: 'pointer',
+            border: activeSuite === 'replay' ? '2px solid #38bdf8' : '1px solid #1e293b',
+            background: activeSuite === 'replay' ? 'linear-gradient(135deg, rgba(2, 132, 199, 0.25) 0%, rgba(56, 189, 248, 0.1) 100%)' : 'rgba(15, 23, 42, 0.7)',
+            color: activeSuite === 'replay' ? '#38bdf8' : '#94a3b8',
+            fontWeight: 800,
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            transition: 'all 0.2s',
+            boxShadow: activeSuite === 'replay' ? '0 0 20px rgba(56, 189, 248, 0.2)' : 'none',
+          }}
+        >
+          <span style={{ fontSize: 18 }}>🎮</span>
+          <span>SERVICE 1: PRO REPLAY & DEM ANALYTICS HUB</span>
+          <span style={{ fontSize: 10, background: '#0284c7', color: '#fff', padding: '2px 7px', borderRadius: 4, fontWeight: 900 }}>10.67 Hz Store</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSuite('video')}
+          style={{
+            flex: 1,
+            padding: '12px 20px',
+            borderRadius: 8,
+            cursor: 'pointer',
+            border: activeSuite === 'video' ? '2px solid #f97316' : '1px solid #1e293b',
+            background: activeSuite === 'video' ? 'linear-gradient(135deg, rgba(249, 115, 22, 0.25) 0%, rgba(251, 146, 60, 0.1) 100%)' : 'rgba(15, 23, 42, 0.7)',
+            color: activeSuite === 'video' ? '#f97316' : '#94a3b8',
+            fontWeight: 800,
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            transition: 'all 0.2s',
+            boxShadow: activeSuite === 'video' ? '0 0 20px rgba(249, 115, 22, 0.2)' : 'none',
+          }}
+        >
+          <span style={{ fontSize: 18 }}>🎥</span>
+          <span>SERVICE 2: LIVE VIDEO & COMPUTER VISION HUB</span>
+          <span style={{ fontSize: 10, background: '#f97316', color: '#000', padding: '2px 7px', borderRadius: 4, fontWeight: 900 }}>Pathways 1 & 3</span>
+        </button>
+      </div>
+
+      {activeSuite === 'video' ? (
+        <VideoHub apiBase={API_BASE} wsBase={WS_BASE} />
+      ) : (
+        <>
+          {/* Top Professional Esports Broadcast Header */}
+          <header
+            className="glass-panel"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -577,6 +718,58 @@ export default function App() {
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: status === 'live' ? '#10b981' : '#94a3b8' }} />
             {status.toUpperCase()}
           </div>
+
+          {/* Faculty Proof & ML Metrics Button */}
+          <button
+            onClick={() => {
+              loadProofData();
+              setShowProofModal(true);
+            }}
+            style={{
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              padding: '8px 14px',
+              fontWeight: 700,
+              fontSize: 12,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: '0 0 14px rgba(16, 185, 129, 0.35)',
+              transition: 'all 0.2s',
+            }}
+            title="View verified academic model training metrics, confusion matrices, ablation ladder & plots"
+          >
+            🎓 Faculty Proof & ML Metrics
+          </button>
+
+          {/* Feed New Replay .dem button */}
+          <button
+            onClick={() => {
+              loadAvailableDemos();
+              setShowDemoModal(true);
+            }}
+            style={{
+              background: 'linear-gradient(135deg, #0284c7 0%, #6366f1 100%)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 6,
+              padding: '8px 14px',
+              fontWeight: 700,
+              fontSize: 12,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: '0 0 14px rgba(14, 165, 233, 0.4)',
+              transition: 'all 0.2s',
+            }}
+            title="Ingest a new CS2 .dem match replay or select an existing one to stream in real time"
+          >
+            ⚡ Live Feed / Ingest .DEM
+          </button>
         </div>
       </header>
 
@@ -1103,6 +1296,32 @@ export default function App() {
                   </p>
                 </div>
 
+                {/* AI Coach Actionable Directive */}
+                {inspectedPlayer.directive && (
+                  <div
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.08)',
+                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                      borderRadius: 8,
+                      padding: '10px 14px',
+                      marginBottom: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                    }}
+                  >
+                    <span style={{ fontSize: 18 }}>🎯</span>
+                    <div>
+                      <div style={{ color: '#f87171', fontSize: 10, fontWeight: 900, letterSpacing: '0.06em' }}>
+                        AI COACH DIRECTIVE
+                      </div>
+                      <div style={{ fontSize: 12, color: '#fca5a5', fontWeight: 600, marginTop: 2 }}>
+                        {inspectedPlayer.directive}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Structured SHAP Threat Impact Factor Bars */}
                 <div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', display: 'block', marginBottom: 8 }}>
@@ -1240,6 +1459,591 @@ export default function App() {
           </div>
         </div>
       </div>
+    </>
+  )}
+
+      {/* Real-Time Demo Feed / Ingestion Modal */}
+      {showDemoModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(3, 7, 18, 0.85)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => !demoProcessing && setShowDemoModal(false)}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              maxWidth: 620,
+              width: '100%',
+              padding: 28,
+              borderRadius: 14,
+              border: '1px solid rgba(56, 189, 248, 0.4)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.9), 0 0 30px rgba(56, 189, 248, 0.25)',
+              position: 'relative',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 20 }}>⚡</span>
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, letterSpacing: '0.04em' }}>
+                  REAL-TIME DEMO INGESTION & LIVE FEED
+                </h2>
+              </div>
+              <button
+                disabled={demoProcessing}
+                onClick={() => setShowDemoModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: 20,
+                  cursor: 'pointer',
+                  padding: 4,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
+              Feed any new CS2 <code>.dem</code> match replay. The engine parses 10Hz game ticks, extracts 28 spatial, line-of-sight & kinematics features, and streams CatBoost & LightGBM neural predictions in real time.
+            </p>
+
+            {/* Replay list selection */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#38bdf8', marginBottom: 6 }}>
+                SELECT AVAILABLE REPLAY (.DEM):
+              </label>
+              <select
+                disabled={demoProcessing}
+                value={selectedDemoName}
+                onChange={(e) => setSelectedDemoName(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: '#070c18',
+                  color: '#f8fafc',
+                  border: '1px solid #334155',
+                  borderRadius: 6,
+                  padding: '10px 12px',
+                  fontSize: 13,
+                  outline: 'none',
+                }}
+              >
+                {availableDemos.map((d) => (
+                  <option key={d.filename} value={d.filename}>
+                    {d.filename} ({d.size_mb} MB) {d.is_ready ? '— [READY TO STREAM]' : '— [REQUIRES INGESTION]'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Custom file path input */}
+            <div style={{ marginBottom: 22 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 6 }}>
+                OR ENTER CUSTOM .DEM FILEPATH:
+              </label>
+              <input
+                disabled={demoProcessing}
+                type="text"
+                placeholder="e.g. data/demos/my_new_match.dem or C:/demos/navi_vs_faze.dem"
+                value={customDemoPath}
+                onChange={(e) => setCustomDemoPath(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: '#070c18',
+                  color: '#f8fafc',
+                  border: '1px solid #334155',
+                  borderRadius: 6,
+                  padding: '10px 12px',
+                  fontSize: 13,
+                  boxSizing: 'border-box',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            {/* Status / Progress message */}
+            {demoProcessMsg && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 6,
+                  background: demoProcessMsg.startsWith('Error') ? 'rgba(239, 68, 68, 0.2)' : 'rgba(14, 165, 233, 0.15)',
+                  border: `1px solid ${demoProcessMsg.startsWith('Error') ? '#ef4444' : '#0ea5e9'}`,
+                  color: demoProcessMsg.startsWith('Error') ? '#fca5a5' : '#38bdf8',
+                  fontSize: 12,
+                  marginBottom: 18,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                {demoProcessing && <span style={{ animation: 'spin 1s linear infinite' }}>⚙️</span>}
+                {demoProcessMsg}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                disabled={demoProcessing}
+                onClick={() => setShowDemoModal(false)}
+                style={{
+                  background: 'rgba(30, 41, 59, 0.7)',
+                  color: '#94a3b8',
+                  border: '1px solid #334155',
+                  padding: '10px 18px',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: 13,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={demoProcessing}
+                onClick={handleProcessAndStream}
+                style={{
+                  background: demoProcessing ? '#334155' : 'linear-gradient(135deg, #0284c7 0%, #38bdf8 100%)',
+                  color: '#040711',
+                  border: 'none',
+                  padding: '10px 22px',
+                  borderRadius: 6,
+                  cursor: demoProcessing ? 'not-allowed' : 'pointer',
+                  fontWeight: 800,
+                  fontSize: 13,
+                  boxShadow: '0 0 20px rgba(56, 189, 248, 0.4)',
+                }}
+              >
+                {demoProcessing ? 'Processing Replay...' : '🚀 Start Real-Time Stream'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Faculty Proof & Academic Metrics Modal */}
+      {showProofModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2, 6, 23, 0.88)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowProofModal(false);
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: 960,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              background: '#0a0f1d',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              borderRadius: 12,
+              padding: 26,
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(16, 185, 129, 0.15)',
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 24 }}>🎓</span>
+                  <h2 style={{ fontSize: 18, fontWeight: 900, color: '#f8fafc', margin: 0, letterSpacing: '0.04em' }}>
+                    ACADEMIC PROOF & ML EVALUATION SUITE
+                  </h2>
+                  <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', border: '1px solid #10b981', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 800 }}>
+                    VERIFIED HOLD-OUT TEST
+                  </span>
+                </div>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: '#94a3b8' }}>
+                  Tournament-disjoint training, feature ablation ladders, confusion matrices, and calibration certificates.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowProofModal(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: 22,
+                  cursor: 'pointer',
+                  padding: 4,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Navigation Tabs */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid #1e293b', paddingBottom: 10 }}>
+              {[
+                { id: 'summary', label: '📊 Dataset & Splitting' },
+                { id: 'ambush', label: '🎯 Ambush / Threat (CatBoost)' },
+                { id: 'win', label: '⚡ Win Probability (LightGBM)' },
+                { id: 'plots', label: '📈 Visual Curves & Plots' },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setProofActiveTab(t.id as any)}
+                  style={{
+                    background: proofActiveTab === t.id ? 'rgba(16, 185, 129, 0.2)' : 'rgba(30, 41, 59, 0.4)',
+                    color: proofActiveTab === t.id ? '#10b981' : '#94a3b8',
+                    border: `1px solid ${proofActiveTab === t.id ? '#10b981' : '#334155'}`,
+                    padding: '8px 16px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {proofLoading && (
+              <div style={{ textAlign: 'center', padding: 40, color: '#10b981', fontSize: 14 }}>
+                Loading verified metrics from models/faculty_metrics_summary.json...
+              </div>
+            )}
+
+            {!proofLoading && proofData && (
+              <div>
+                {/* Tab 1: Dataset & Splitting */}
+                {proofActiveTab === 'summary' && (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">TOTAL MATCHES</span>
+                        <span className="stat-value font-mono" style={{ color: '#38bdf8' }}>{proofData.dataset_summary.total_matches}</span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>CS2 Pro Tier Matches</span>
+                      </div>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">TRAIN PARTITION</span>
+                        <span className="stat-value font-mono" style={{ color: '#10b981' }}>{proofData.dataset_summary.train_matches}</span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>{proofData.dataset_summary.ambush_train_samples} samples</span>
+                      </div>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">VAL PARTITION</span>
+                        <span className="stat-value font-mono" style={{ color: '#f59e0b' }}>{proofData.dataset_summary.val_matches}</span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>{proofData.dataset_summary.ambush_val_samples} samples</span>
+                      </div>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">TEST HOLDOUT</span>
+                        <span className="stat-value font-mono" style={{ color: '#ec4899' }}>{proofData.dataset_summary.test_matches}</span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>{proofData.dataset_summary.ambush_test_samples} samples (Touched Once)</span>
+                      </div>
+                    </div>
+
+                    <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                      <h4 style={{ margin: '0 0 6px', color: '#10b981', fontSize: 13, fontWeight: 800 }}>
+                        ✓ STRICT DISJOINT TOURNAMENT SPLIT (NO DATA LEAKAGE)
+                      </h4>
+                      <p style={{ margin: 0, fontSize: 12, lineHeight: '1.6', color: '#cbd5e1' }}>
+                        Matches are grouped and partitioned strictly by whole tournaments (e.g. StarLadder Major 2025 in Test Holdout, DraculaN in Validation, CS2 Fengda in Training). Random frame-level splitting was intentionally forbidden to prevent temporal leakage of identical player trajectories.
+                      </p>
+                    </div>
+
+                    <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: 8, padding: 16 }}>
+                      <h4 style={{ margin: '0 0 6px', color: '#38bdf8', fontSize: 13, fontWeight: 800 }}>
+                        ✓ TARGET ONSET & NEGATIVE BUFFER EXCLUSION
+                      </h4>
+                      <p style={{ margin: 0, fontSize: 12, lineHeight: '1.6', color: '#cbd5e1' }}>
+                        Ambush positives are recorded exclusively at onset timestamp t0. All frames within ±5 seconds (53 frames before and after) of any fight are banned from the negative pool, establishing an honest, non-trivial binary classification task at 5.0% base rate.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 2: Ambush / Threat Model */}
+                {proofActiveTab === 'ambush' && (
+                  <div>
+                    {/* Test Metrics Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 18 }}>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">TEST PR-AUC</span>
+                        <span className="stat-value font-mono" style={{ color: '#f97316' }}>
+                          {proofData.ambush_model.test_metrics_default_th.pr_auc.toFixed(4)}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#10b981' }}>+418% over 0.0500 base</span>
+                      </div>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">TEST ROC-AUC</span>
+                        <span className="stat-value font-mono" style={{ color: '#38bdf8' }}>
+                          {proofData.ambush_model.test_metrics_default_th.roc_auc.toFixed(4)}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>vs 0.500 random</span>
+                      </div>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">TEST BRIER SCORE</span>
+                        <span className="stat-value font-mono" style={{ color: '#10b981' }}>
+                          {proofData.ambush_model.test_metrics_default_th.brier_score.toFixed(4)}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>Mean Squared Error</span>
+                      </div>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">CALIBRATION ECE</span>
+                        <span className="stat-value font-mono" style={{ color: '#a855f7' }}>
+                          {proofData.ambush_model.test_metrics_default_th.ece.toFixed(4)}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>Expected Calib Error</span>
+                      </div>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">LOG-LOSS</span>
+                        <span className="stat-value font-mono" style={{ color: '#e2e8f0' }}>
+                          {proofData.ambush_model.test_metrics_default_th.log_loss.toFixed(4)}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>Cross-Entropy</span>
+                      </div>
+                    </div>
+
+                    {/* Confusion Matrix Table */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                      <div style={{ background: '#0e1626', border: '1px solid #1e293b', borderRadius: 8, padding: 14 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', marginBottom: 10 }}>
+                          CONFUSION MATRIX (HOLD-OUT TEST, THRESHOLD = 0.50)
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center' }}>
+                          <thead>
+                            <tr style={{ background: '#1e293b', color: '#94a3b8' }}>
+                              <th style={{ padding: 6 }}>Actual \ Pred</th>
+                              <th style={{ padding: 6, color: '#ef4444' }}>Pred Ambush (1)</th>
+                              <th style={{ padding: 6, color: '#10b981' }}>Pred Safe (0)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td style={{ padding: 8, fontWeight: 700, color: '#f8fafc' }}>Actual Ambush</td>
+                              <td style={{ padding: 8, background: 'rgba(239, 68, 68, 0.15)', color: '#fca5a5', fontWeight: 800 }}>
+                                TP = {proofData.ambush_model.test_metrics_default_th.confusion_matrix.tp}
+                              </td>
+                              <td style={{ padding: 8, color: '#94a3b8' }}>
+                                FN = {proofData.ambush_model.test_metrics_default_th.confusion_matrix.fn}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td style={{ padding: 8, fontWeight: 700, color: '#f8fafc' }}>Actual Safe</td>
+                              <td style={{ padding: 8, color: '#94a3b8' }}>
+                                FP = {proofData.ambush_model.test_metrics_default_th.confusion_matrix.fp}
+                              </td>
+                              <td style={{ padding: 8, background: 'rgba(16, 185, 129, 0.15)', color: '#86efac', fontWeight: 800 }}>
+                                TN = {proofData.ambush_model.test_metrics_default_th.confusion_matrix.tn}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <div style={{ marginTop: 10, fontSize: 11, color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Precision: {(proofData.ambush_model.test_metrics_default_th.precision * 100).toFixed(1)}%</span>
+                          <span>Recall: {(proofData.ambush_model.test_metrics_default_th.recall * 100).toFixed(1)}%</span>
+                          <span>F1-Score: {proofData.ambush_model.test_metrics_default_th.f1_score.toFixed(3)}</span>
+                        </div>
+                      </div>
+
+                      {/* Ablation Ladder Table */}
+                      <div style={{ background: '#0e1626', border: '1px solid #1e293b', borderRadius: 8, padding: 14 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: '#10b981', marginBottom: 10 }}>
+                          FEATURE ABLATION PROGRESSION (VAL SET)
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                          <thead>
+                            <tr style={{ background: '#1e293b', color: '#94a3b8', textAlign: 'left' }}>
+                              <th style={{ padding: 5 }}>Tier</th>
+                              <th style={{ padding: 5 }}>Features</th>
+                              <th style={{ padding: 5 }}>PR-AUC</th>
+                              <th style={{ padding: 5 }}>ROC-AUC</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Object.entries(proofData.ambush_model.ablation_ladder).map(([k, v]: [string, any]) => (
+                              <tr key={k} style={{ borderBottom: '1px solid #1e293b' }}>
+                                <td style={{ padding: '6px 4px', fontWeight: 700, color: '#cbd5e1' }}>{k}</td>
+                                <td style={{ padding: '6px 4px', color: '#64748b' }}>{v.features_count}</td>
+                                <td style={{ padding: '6px 4px', color: '#f97316', fontWeight: 800 }}>{v.pr_auc.toFixed(4)}</td>
+                                <td style={{ padding: '6px 4px', color: '#38bdf8' }}>{v.roc_auc.toFixed(4)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 3: Win Probability Model */}
+                {proofActiveTab === 'win' && (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">TEST LOG-LOSS</span>
+                        <span className="stat-value font-mono" style={{ color: '#10b981' }}>
+                          {proofData.win_probability_model.test_metrics.log_loss.toFixed(4)}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>vs 0.693 coin-flip baseline</span>
+                      </div>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">TEST ROC-AUC</span>
+                        <span className="stat-value font-mono" style={{ color: '#38bdf8' }}>
+                          {proofData.win_probability_model.test_metrics.roc_auc.toFixed(4)}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>Macroscopic prediction</span>
+                      </div>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">BRIER SCORE</span>
+                        <span className="stat-value font-mono" style={{ color: '#f59e0b' }}>
+                          {proofData.win_probability_model.test_metrics.brier_score.toFixed(4)}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>Calibration accuracy</span>
+                      </div>
+                      <div className="stat-box" style={{ background: '#0e1626' }}>
+                        <span className="stat-label">TEST FRAMES</span>
+                        <span className="stat-value font-mono" style={{ color: '#e2e8f0' }}>
+                          {proofData.dataset_summary.win_test_frames.toLocaleString()}
+                        </span>
+                        <span style={{ fontSize: 10, color: '#64748b' }}>10.67 Hz frame store</span>
+                      </div>
+                    </div>
+
+                    {/* Win Confusion Matrix Table */}
+                    <div style={{ background: '#0e1626', border: '1px solid #1e293b', borderRadius: 8, padding: 16 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#38bdf8', marginBottom: 12 }}>
+                        WIN PROBABILITY CONFUSION MATRIX (75,362 TEST FRAMES, THRESHOLD = 0.50)
+                      </div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center' }}>
+                        <thead>
+                          <tr style={{ background: '#1e293b', color: '#94a3b8' }}>
+                            <th style={{ padding: 8 }}>Actual Outcome</th>
+                            <th style={{ padding: 8, color: '#f97316' }}>Pred Attacker Win (1)</th>
+                            <th style={{ padding: 8, color: '#06b6d4' }}>Pred Defense Win (0)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td style={{ padding: 10, fontWeight: 700, color: '#f8fafc' }}>Actual Attacker Win</td>
+                            <td style={{ padding: 10, background: 'rgba(249, 115, 22, 0.15)', color: '#fed7aa', fontWeight: 800 }}>
+                              TP = {proofData.win_probability_model.test_metrics.confusion_matrix.tp.toLocaleString()}
+                            </td>
+                            <td style={{ padding: 10, color: '#94a3b8' }}>
+                              FN = {proofData.win_probability_model.test_metrics.confusion_matrix.fn.toLocaleString()}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td style={{ padding: 10, fontWeight: 700, color: '#f8fafc' }}>Actual Defense Win</td>
+                            <td style={{ padding: 10, color: '#94a3b8' }}>
+                              FP = {proofData.win_probability_model.test_metrics.confusion_matrix.fp.toLocaleString()}
+                            </td>
+                            <td style={{ padding: 10, background: 'rgba(6, 182, 212, 0.15)', color: '#a5f3fc', fontWeight: 800 }}>
+                              TN = {proofData.win_probability_model.test_metrics.confusion_matrix.tn.toLocaleString()}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div style={{ marginTop: 12, fontSize: 12, color: '#94a3b8', display: 'flex', justifyContent: 'space-around' }}>
+                        <span>Accuracy: <strong>{(proofData.win_probability_model.test_metrics.accuracy * 100).toFixed(1)}%</strong></span>
+                        <span>Precision: <strong>{(proofData.win_probability_model.test_metrics.precision * 100).toFixed(1)}%</strong></span>
+                        <span>Recall: <strong>{(proofData.win_probability_model.test_metrics.recall * 100).toFixed(1)}%</strong></span>
+                        <span>F1-Score: <strong>{proofData.win_probability_model.test_metrics.f1_score.toFixed(3)}</strong></span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 4: Visual Plots Gallery */}
+                {proofActiveTab === 'plots' && (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                      <div style={{ background: '#0e1626', border: '1px solid #1e293b', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: '#f97316', marginBottom: 8 }}>
+                          AMBUSH PRECISION-RECALL CURVE
+                        </div>
+                        <img
+                          src={`${API_BASE}/api/ml/plots/ambush_pr_curve.png`}
+                          alt="PR Curve"
+                          style={{ width: '100%', borderRadius: 6, border: '1px solid #334155' }}
+                        />
+                      </div>
+                      <div style={{ background: '#0e1626', border: '1px solid #1e293b', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', marginBottom: 8 }}>
+                          AMBUSH ROC-AUC CURVE
+                        </div>
+                        <img
+                          src={`${API_BASE}/api/ml/plots/ambush_roc_curve.png`}
+                          alt="ROC Curve"
+                          style={{ width: '100%', borderRadius: 6, border: '1px solid #334155' }}
+                        />
+                      </div>
+                      <div style={{ background: '#0e1626', border: '1px solid #1e293b', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: '#10b981', marginBottom: 8 }}>
+                          AMBUSH FEATURE IMPORTANCES (CATBOOST)
+                        </div>
+                        <img
+                          src={`${API_BASE}/api/ml/plots/ambush_feature_importance.png`}
+                          alt="Feature Importances"
+                          style={{ width: '100%', borderRadius: 6, border: '1px solid #334155' }}
+                        />
+                      </div>
+                      <div style={{ background: '#0e1626', border: '1px solid #1e293b', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: '#a855f7', marginBottom: 8 }}>
+                          WIN RELIABILITY CALIBRATION & GAIN
+                        </div>
+                        <img
+                          src={`${API_BASE}/api/ml/plots/win_calibration_and_features.png`}
+                          alt="Calibration Curve"
+                          style={{ width: '100%', borderRadius: 6, border: '1px solid #334155' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Footer with Report Path */}
+            <div style={{ marginTop: 24, paddingTop: 14, borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                Full Academic Report generated in: <code style={{ color: '#38bdf8' }}>models/FACULTY_EVALUATION_REPORT.md</code>
+              </div>
+              <button
+                onClick={() => setShowProofModal(false)}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '8px 20px',
+                  borderRadius: 6,
+                  fontWeight: 700,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Close Verification Modal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

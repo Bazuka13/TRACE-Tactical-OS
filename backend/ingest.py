@@ -4,7 +4,10 @@ import logging
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from demoparser2 import DemoParser
+try:
+    from demoparser2 import DemoParser
+except ImportError:
+    DemoParser = None
 from config import ROOT, DEMOS, TICKS, AUX, TICK_RATE, STEP
 from maps import MAP_DATA, world_to_norm, units_to_norm
 

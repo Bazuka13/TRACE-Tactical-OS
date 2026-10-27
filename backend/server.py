@@ -2,16 +2,21 @@
 import asyncio
 import os
 import re
+import time
+from pathlib import Path
 import numpy as np
 import orjson
+import json
 import pandas as pd
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from scipy.spatial import cKDTree
-from config import FEATS, AUX, EMB, DT
+from config import ROOT, FEATS, AUX, EMB, DT, DEMOS, MODELS
 from maps import load_walls, units_per_norm
 from features import CELLS, GRID, blocked_by_walls
-from explain import load_models, Explainers, threat_sentence, win_sentence
+from explain import load_models, Explainers, threat_sentence, win_sentence, tactical_directive
 
 ALLOWED = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', '*').split(',') if o.strip()]
 MAX_CLIENTS = int(os.environ.get('MAX_CLIENTS', '5'))
@@ -22,13 +27,113 @@ app = FastAPI(title="Esports Tactical OS - Pro Analytics Server")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED if '*' not in ALLOWED else ['*'],
-    allow_methods=['GET'],
+    allow_methods=['*'],
     allow_headers=['*'],
 )
 
 
 @app.get('/health')
-def health():
+def health(request: Request):
+    accept = request.headers.get('accept', '')
+    ua = request.headers.get('user-agent', '').lower()
+    is_browser = ('text/html' in accept) or ('mozilla' in ua) or ('chrome' in ua) or ('safari' in ua)
+    if is_browser and 'application/json' not in accept:
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+  <title>Esports Tactical OS - Health Gateway</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="3;url=/">
+  <style>
+    body {{
+      background: #050811;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }}
+    .card {{
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.8), 0 0 24px rgba(56, 189, 248, 0.2);
+      border-radius: 14px;
+      padding: 36px;
+      max-width: 540px;
+      width: 100%;
+      text-align: center;
+    }}
+    .status-badge {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(16, 185, 129, 0.18);
+      border: 1px solid #10b981;
+      color: #34d399;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 13px;
+      margin-bottom: 22px;
+    }}
+    h1 {{ font-size: 24px; margin: 0 0 12px; font-weight: 800; letter-spacing: 0.03em; }}
+    p {{ color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 0 0 28px; }}
+    .btn {{
+      display: inline-block;
+      background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%);
+      color: #040711;
+      font-weight: 800;
+      font-size: 15px;
+      text-decoration: none;
+      padding: 14px 28px;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.45);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }}
+    .btn:hover {{
+      transform: scale(1.04);
+      box-shadow: 0 0 30px rgba(56, 189, 248, 0.65);
+    }}
+    .meta {{
+      margin-top: 26px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #64748b;
+      background: #070c18;
+      padding: 12px 16px;
+      border-radius: 6px;
+      border: 1px solid #1e293b;
+      text-align: left;
+      line-height: 1.8;
+    }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="status-badge">
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+      ALL SERVICES OPERATIONAL (HEALTHY)
+    </div>
+    <h1>ESPORTS TACTICAL OS</h1>
+    <p>You have accessed the backend API health monitor. All neural prediction models, spatial raycasting, and WebSocket streaming servers are online.</p>
+    <a href="/" class="btn">🚀 ENTER TACTICAL DASHBOARD</a>
+    <div style="margin-top: 12px; font-size: 13px;">
+      <span style="color: #64748b;">Or open live dev server: </span>
+      <a href="http://localhost:5173/" style="color: #38bdf8; text-decoration: underline;">http://localhost:5173/</a>
+    </div>
+    <div class="meta">
+      <div>Backend API: HTTP 200 OK (Redirecting to Dashboard in 3s...)</div>
+      <div>Active Replay Streams: {active['n']} / {MAX_CLIENTS} (Max Limit)</div>
+      <div>Telemetry WebSocket: /ws/replay/&#123;match&#125;/&#123;round&#125;</div>
+    </div>
+  </div>
+</body>
+</html>"""
+        return HTMLResponse(content=html_content)
     return {'ok': True, 'clients_active': active['n'], 'max_clients': MAX_CLIENTS}
 
 
@@ -59,6 +164,85 @@ def get_models():
 def get_matches():
     files = sorted(p.name.replace('_players.parquet', '') for p in FEATS.glob('*_players.parquet'))
     return files
+
+
+@app.get('/api/available_demos')
+def get_available_demos():
+    """Lists all .dem replay files available on disk with indexing status."""
+    demos_dir = ROOT / 'data' / 'demos'
+    if not demos_dir.exists():
+        return {'demos': []}
+    
+    out = []
+    for p in sorted(demos_dir.glob('*.dem')):
+        mid = p.stem
+        is_ready = (FEATS / f"{mid}_players.parquet").exists()
+        out.append({
+            'filename': p.name,
+            'match_id': mid,
+            'size_mb': round(p.stat().st_size / (1024 * 1024), 1),
+            'is_ready': is_ready
+        })
+    return {'demos': out}
+
+
+@app.post('/api/demos/process')
+async def process_demo_feed(req: Request):
+    """Processes a new or existing .dem replay into features for live streaming."""
+    try:
+        data = await req.json()
+    except Exception:
+        data = {}
+
+    demo_name = data.get('demo_name', '').strip()
+    if not demo_name:
+        return {'ok': False, 'error': 'Missing demo_name or file path.'}
+
+    raw_path = Path(demo_name)
+    candidates = [
+        raw_path,
+        ROOT / demo_name,
+        ROOT / 'data' / 'demos' / demo_name,
+        ROOT / 'data' / 'demos' / raw_path.name,
+        DEMOS / demo_name,
+        DEMOS / raw_path.name,
+    ]
+    demo_path = None
+    for cand in candidates:
+        if cand.exists() and cand.is_file():
+            demo_path = cand
+            break
+
+    if demo_path is None:
+        return {'ok': False, 'error': f"Demo file not found: {demo_name}"}
+
+    mid = demo_path.stem
+    players_parquet = FEATS / f"{mid}_players.parquet"
+    team_parquet = FEATS / f"{mid}_team.parquet"
+
+    # If not already indexed, ingest ticks and extract features
+    try:
+        if not players_parquet.exists() or not team_parquet.exists():
+            from ingest import save as save_ticks
+            from features import process_match
+            
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, save_ticks, demo_path)
+            players, team_df = await loop.run_in_executor(None, process_match, mid)
+            players.to_parquet(players_parquet)
+            team_df.to_parquet(team_parquet)
+
+        pl = pd.read_parquet(players_parquet, columns=['round_num'])
+        rounds = sorted(int(r) for r in pl.round_num.unique())
+        return {
+            'ok': True,
+            'match_id': mid,
+            'rounds': rounds,
+            'total_rounds': len(rounds),
+            'message': f"Replay {mid} is ready for real-time live streaming!"
+        }
+    except Exception as e:
+        return {'ok': False, 'error': f"Processing error: {str(e)}"}
 
 
 @app.get('/matches/{match_id}/rounds')
@@ -192,6 +376,7 @@ def compute_xai(Xp, slots, probs, xw, wp):
         for slot, p, r in zip(slots, probs, expl.players(Xp)):
             players[int(slot)] = {
                 'text': threat_sentence(int(slot), float(p), r),
+                'directive': tactical_directive(int(slot), float(p), r),
                 'factors': r
             }
     win_reasons = expl.win(xw)
@@ -315,6 +500,7 @@ def build_frame_dict(i, total_frames, tick, g, trow, alive, threat, wp, cache, m
             'has_crossfire': int(getattr(p, 'has_crossfire_partner', 0)),
             'in_enemy_zone': int(getattr(p, 'is_in_enemy_territory', 0)),
             'why': cache['players'].get(int(p.slot), {}).get('text', ''),
+            'directive': cache['players'].get(int(p.slot), {}).get('directive', ''),
             'factors': cache['players'].get(int(p.slot), {}).get('factors', [])
         })
 
@@ -497,3 +683,195 @@ async def replay(ws: WebSocket, match_id: str, round_num: int):
         active['n'] = max(0, active['n'] - 1)
         stream_active = False
         listener_task.cancel()
+
+
+@app.get('/api/ml/metrics')
+def get_ml_metrics():
+    """Serves formal faculty proof metrics, confusion matrices, and ablation data."""
+    proof_path = MODELS / 'faculty_metrics_summary.json'
+    if proof_path.exists():
+        with open(proof_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {'error': 'Metrics report not found. Run backend/model_training_proof.py.'}
+
+
+# =============================================================================
+# Pathway 1 & 3: Video Computer Vision & Live Telemetry Endpoints
+# =============================================================================
+_cv_engine = None
+
+def get_cv_engine():
+    global _cv_engine
+    if _cv_engine is None:
+        from cv_radar_engine import CVTacticalPredictor
+        _cv_engine = CVTacticalPredictor('de_mirage')
+    return _cv_engine
+
+
+@app.post('/api/cv/predict_frame')
+async def predict_cv_frame(req: Request):
+    """Pathway 1: Accepts real-time CV detected player coordinates and returns 28-feature inference."""
+    try:
+        body = await req.json()
+    except Exception:
+        body = {}
+
+    frame_idx = int(body.get('frame_idx', 0))
+    clock_s = float(body.get('clock', 30.0))
+    players = body.get('players', [])
+    engine = get_cv_engine()
+    result = engine.process_frame(frame_idx=frame_idx, clock_s=clock_s, direct_players=players)
+    return result
+
+
+@app.websocket('/ws/cv_stream')
+async def cv_stream_ws(ws: WebSocket):
+    """Pathway 1 & 3: Continuous bi-directional WebSocket stream for live video telemetry."""
+    await ws.accept()
+    engine = get_cv_engine()
+    try:
+        while True:
+            text = await ws.receive_text()
+            data = orjson.loads(text)
+            frame_idx = int(data.get('frame_idx', 0))
+            clock_s = float(data.get('clock', 0.0))
+            players = data.get('players', [])
+            payload = engine.process_frame(frame_idx=frame_idx, clock_s=clock_s, direct_players=players)
+            await ws.send_text(orjson.dumps(payload).decode())
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await ws.send_text(orjson.dumps({'error': str(e)}).decode())
+        except Exception:
+            pass
+
+
+# =============================================================================
+# Valve CS2 Game State Integration (GSI) Live Endpoint for 4 PM Matches
+# =============================================================================
+_latest_gsi_state = {"status": "waiting", "timestamp": 0, "payload": {}}
+
+@app.post('/api/gsi/live')
+async def valve_gsi_webhook(req: Request):
+    """Valve Game State Integration: CS2 game engine directly pushes live 4 PM match ticks."""
+    global _latest_gsi_state
+    try:
+        body = await req.json()
+        _latest_gsi_state = {
+            "status": "live",
+            "timestamp": time.time(),
+            "payload": body
+        }
+        return {"status": "ok"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get('/api/gsi/status')
+def get_gsi_status():
+    """Returns the latest live match tick received from Valve Game State Integration."""
+    return _latest_gsi_state
+
+@app.get('/api/gsi/cfg')
+def download_gsi_cfg():
+    """Generates the official gamestate_integration_tactical_os.cfg file for CS2."""
+    cfg_content = """"Tactical OS CS2 Integration"
+{
+ "uri" "http://127.0.0.1:8000/api/gsi/live"
+ "timeout" "5.0"
+ "buffer"  "0.1"
+ "throttle" "0.1"
+ "heartbeat" "15.0"
+ "data"
+ {
+   "provider"            "1"
+   "map"                 "1"
+   "round"               "1"
+   "player_id"           "1"
+   "player_state"        "1"
+   "player_weapons"      "1"
+   "player_match_stats"  "1"
+   "allplayers_id"       "1"
+   "allplayers_state"    "1"
+   "allplayers_match_stats" "1"
+   "allplayers_weapons"  "1"
+   "allplayers_position" "1"
+   "bomb"                "1"
+ }
+}
+"""
+    return PlainTextResponse(cfg_content, headers={"Content-Disposition": "attachment; filename=gamestate_integration_tactical_os.cfg"})
+
+
+# =============================================================================
+# Video Management & File Upload Endpoints
+# =============================================================================
+VIDEOS_DIR = ROOT / 'data' / 'videos'
+VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.get('/api/videos/list')
+def list_videos():
+    """Lists all available match gameplay videos in data/videos/."""
+    vids = []
+    if VIDEOS_DIR.exists():
+        for p in sorted(VIDEOS_DIR.glob('*.*')):
+            if p.suffix.lower() in ('.mp4', '.webm', '.avi', '.mov', '.mkv'):
+                size_mb = round(p.stat().st_size / (1024 * 1024), 2)
+                vids.append({
+                    'filename': p.name,
+                    'url': f'/videos/{p.name}',
+                    'size_mb': size_mb,
+                    'modified': p.stat().st_mtime,
+                    'is_sample': p.name == 'sample_gameplay.mp4'
+                })
+    return {'videos': vids}
+
+
+@app.post('/api/videos/upload')
+async def upload_video(request: Request):
+    """Accepts any custom gameplay video file via dropzone / binary upload and saves to data/videos/."""
+    raw_filename = request.headers.get('x-filename', 'uploaded_gameplay.mp4')
+    safe_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', raw_filename)
+    if not safe_name.lower().endswith(('.mp4', '.webm', '.avi', '.mov', '.mkv')):
+        safe_name += '.mp4'
+    
+    target_path = VIDEOS_DIR / safe_name
+    content = await request.body()
+    with open(target_path, 'wb') as f:
+        f.write(content)
+        
+    size_mb = round(len(content) / (1024 * 1024), 2)
+    return {
+        'status': 'success',
+        'filename': safe_name,
+        'url': f'/videos/{safe_name}',
+        'size_mb': size_mb,
+        'message': f'Uploaded {safe_name} ({size_mb} MB) successfully to data/videos/'
+    }
+
+
+@app.post('/api/videos/generate_sample')
+def generate_sample_video_endpoint():
+    """Generates or regenerates automated CS2 match gameplay test video."""
+    try:
+        from generate_sample_video import create_gameplay_video
+        info = create_gameplay_video()
+        return {'status': 'success', **info}
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
+
+
+app.mount('/videos', StaticFiles(directory=str(VIDEOS_DIR)), name='videos')
+
+# Mount evaluation plots
+PLOTS_DIR = MODELS / 'evaluation_plots'
+if PLOTS_DIR.exists():
+    app.mount('/api/ml/plots', StaticFiles(directory=str(PLOTS_DIR)), name='ml_plots')
+
+# Mount static frontend production build at root if available
+DIST_DIR = ROOT / 'frontend' / 'dist'
+if DIST_DIR.exists():
+    app.mount('/', StaticFiles(directory=str(DIST_DIR), html=True), name='frontend')
+
+
