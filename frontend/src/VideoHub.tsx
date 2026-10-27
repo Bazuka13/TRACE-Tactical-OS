@@ -75,24 +75,24 @@ export interface RadarROI {
 
 const ROI_PRESETS: Record<string, { label: string; desc: string; roi: RadarROI }> = {
   pgl_major: {
-    label: '🏆 PGL Major / Tournaments',
-    desc: 'Tuned for PGL 2024 / Copenhagen Major broadcast overlay',
-    roi: { xPct: 0.015, yPct: 0.075, wPct: 0.175, hPct: 0.235 },
-  },
-  cs2_fullscreen: {
-    label: '🖥 Full Screen CS2 (Default)',
-    desc: 'Standard top-left CS2 spectator radar overview',
-    roi: { xPct: 0.02, yPct: 0.035, wPct: 0.18, hPct: 0.25 },
+    label: '🏆 PGL Major 2024 (Broadcast)',
+    desc: 'Tuned for PGL 2024 Copenhagen Major overlay (excludes top header)',
+    roi: { xPct: 0.012, yPct: 0.096, wPct: 0.155, hPct: 0.205 },
   },
   youtube_split: {
     label: '🪟 YouTube Windowed (Left Half)',
     desc: 'Compensates for browser search bar and window margins',
-    roi: { xPct: 0.012, yPct: 0.105, wPct: 0.155, hPct: 0.21 },
+    roi: { xPct: 0.010, yPct: 0.118, wPct: 0.148, hPct: 0.198 },
+  },
+  cs2_fullscreen: {
+    label: '🖥 Full Screen CS2 (Default)',
+    desc: 'Standard top-left CS2 spectator radar overview',
+    roi: { xPct: 0.018, yPct: 0.035, wPct: 0.178, hPct: 0.245 },
   },
   custom: {
-    label: '⚙️ Custom Calibrated ROI',
-    desc: 'Fine-tuned with custom sliders or drag box',
-    roi: { xPct: 0.015, yPct: 0.075, wPct: 0.175, hPct: 0.235 },
+    label: '⚙️ Custom / Drag-Selected ROI',
+    desc: 'Drag box on video with mouse or use fine-tune sliders',
+    roi: { xPct: 0.012, yPct: 0.096, wPct: 0.155, hPct: 0.205 },
   },
 };
 
@@ -135,6 +135,17 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
   const [showRoiCalibrator, setShowRoiCalibrator] = useState<boolean>(true);
   const [colorSensitivity, setColorSensitivity] = useState<number>(1.0);
   const roiCropCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Interactive Drag-to-Select ROI Box on Video
+  const [isBoxDragging, setIsBoxDragging] = useState<boolean>(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
+
+  // Map Coordinate Calibration: Zoom scale & offset relative to de_mirage.png
+  const [mapScale, setMapScale] = useState<number>(1.05);
+  const [mapOffsetX, setMapOffsetX] = useState<number>(0.0);
+  const [mapOffsetY, setMapOffsetY] = useState<number>(0.0);
+  const [showAlignmentGuides, setShowAlignmentGuides] = useState<boolean>(false);
 
   // Inspector & Interactive Selection
   const DEFAULT_INITIAL_TACTICAL_DATA: TacticalPayload = {
@@ -637,30 +648,58 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
             const imgData = offCtx.getImageData(0, 0, rw, rh);
             const data = imgData.data;
 
-            // 4. Spatial Euclidean Centroid Clustering Algorithm
-            // Solves duplicate dots and clusters all pixels of a player dot into one centroid!
+            // 4. HSV Color Space Filtering & Spatial Euclidean Centroid Clustering
+            // Rejects background sandstone walls and spectator HUD cards by checking Hue, Saturation, and cluster dimensions
             interface ColorBlob {
               sumX: number;
               sumY: number;
               count: number;
+              minX: number;
+              maxX: number;
+              minY: number;
+              maxY: number;
             }
 
             const blobsT: ColorBlob[] = [];
             const blobsCT: ColorBlob[] = [];
             const MERGE_DIST_SQ = 14 * 14; // 14px merge radius
-            const sens = colorSensitivity;
-            const tMinR = 150 / sens;
-            const ctMinB = 130 / sens;
+            const sens = Math.max(0.6, colorSensitivity);
 
-            for (let y = 0; y < rh; y += 3) {
-              for (let x = 0; x < rw; x += 3) {
+            for (let y = 0; y < rh; y += 2) {
+              for (let x = 0; x < rw; x += 2) {
                 const idx = (y * rw + x) * 4;
                 const r = data[idx];
                 const g = data[idx + 1];
                 const b = data[idx + 2];
 
-                // Check Orange Terrorist Dot: High Red, Moderate Green, Low Blue
-                if (r > tMinR && g > 55 && g < 195 && b < 120 && (r - b) > 45) {
+                // Fast pre-filter: discard extreme darkness or extreme brightness
+                const max = Math.max(r, g, b);
+                if (max < 65 || (r > 240 && g > 240 && b > 240)) continue;
+                const min = Math.min(r, g, b);
+                const delta = max - min;
+                if (delta < 24) continue; // discard neutral grays
+
+                const s = delta / max;
+                const v = max / 255;
+                let h = 0;
+                if (max === r) {
+                  h = ((g - b) / delta + (g < b ? 6 : 0)) * 60;
+                } else if (max === g) {
+                  h = ((b - r) / delta + 2) * 60;
+                } else {
+                  h = ((r - g) / delta + 4) * 60;
+                }
+
+                // Check Orange/Amber Terrorist Dot:
+                // Hue in [18, 62], Saturation >= 0.40 / sens, Value >= 0.42
+                // Discards sandstone walls (which have Saturation <= 0.35)
+                const isT = h >= 18 && h <= 62 && s >= 0.40 / sens && v >= 0.42 && r > b + 35;
+
+                // Check Cyan/Sky-Blue Counter-Terrorist Dot:
+                // Hue in [175, 232], Saturation >= 0.30 / sens, Value >= 0.38
+                const isCT = h >= 175 && h <= 232 && s >= 0.30 / sens && v >= 0.38 && b > r + 25;
+
+                if (isT) {
                   let matched = false;
                   for (const blob of blobsT) {
                     const cx = blob.sumX / blob.count;
@@ -671,17 +710,18 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
                       blob.sumX += x;
                       blob.sumY += y;
                       blob.count++;
+                      blob.minX = Math.min(blob.minX, x);
+                      blob.maxX = Math.max(blob.maxX, x);
+                      blob.minY = Math.min(blob.minY, y);
+                      blob.maxY = Math.max(blob.maxY, y);
                       matched = true;
                       break;
                     }
                   }
                   if (!matched) {
-                    blobsT.push({ sumX: x, sumY: y, count: 1 });
+                    blobsT.push({ sumX: x, sumY: y, count: 1, minX: x, maxX: x, minY: y, maxY: y });
                   }
-                }
-
-                // Check Cyan Counter-Terrorist Dot: High Blue, High Green, Low Red
-                if (b > ctMinB && g > 95 && r < 135 && (b - r) > 30) {
+                } else if (isCT) {
                   let matched = false;
                   for (const blob of blobsCT) {
                     const cx = blob.sumX / blob.count;
@@ -692,20 +732,33 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
                       blob.sumX += x;
                       blob.sumY += y;
                       blob.count++;
+                      blob.minX = Math.min(blob.minX, x);
+                      blob.maxX = Math.max(blob.maxX, x);
+                      blob.minY = Math.min(blob.minY, y);
+                      blob.maxY = Math.max(blob.maxY, y);
                       matched = true;
                       break;
                     }
                   }
                   if (!matched) {
-                    blobsCT.push({ sumX: x, sumY: y, count: 1 });
+                    blobsCT.push({ sumX: x, sumY: y, count: 1, minX: x, maxX: x, minY: y, maxY: y });
                   }
                 }
               }
             }
 
-            // Filter out single-pixel noise (min 4 sampled hits) and take top 5
-            const validT = blobsT.filter(b => b.count >= 4).sort((a, b) => b.count - a.count).slice(0, 5);
-            const validCT = blobsCT.filter(b => b.count >= 4).sort((a, b) => b.count - a.count).slice(0, 5);
+            // Cluster Geometry & Dimension Filter:
+            // Eliminates large HUD cards, health bars, borders, and single-pixel artifacts.
+            // Player minimap dots are compact circles (width & height <= 26px, aspect ratio between 0.35 and 2.8)
+            const isValidBlob = (b: ColorBlob) => {
+              const bw = b.maxX - b.minX + 1;
+              const bh = b.maxY - b.minY + 1;
+              const aspect = bw / Math.max(1, bh);
+              return b.count >= 3 && bw <= 26 && bh <= 26 && aspect >= 0.35 && aspect <= 2.8;
+            };
+
+            const validT = blobsT.filter(isValidBlob).sort((a, b) => b.count - a.count).slice(0, 5);
+            const validCT = blobsCT.filter(isValidBlob).sort((a, b) => b.count - a.count).slice(0, 5);
 
             // Render live zoomed radar crop preview
             if (roiCropCanvasRef.current) {
@@ -721,6 +774,29 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
                 cropCtx.moveTo(70, 0); cropCtx.lineTo(70, 140);
                 cropCtx.moveTo(0, 70); cropCtx.lineTo(140, 70);
                 cropCtx.stroke();
+
+                // Draw landmark alignment guides on sensor preview if active
+                if (showAlignmentGuides) {
+                  const landmarks = [
+                    { name: 'A', x: 0.43, y: 0.65, color: '#f59e0b' },
+                    { name: 'B', x: 0.70, y: 0.35, color: '#10b981' },
+                    { name: 'MID', x: 0.52, y: 0.45, color: '#38bdf8' },
+                  ];
+                  landmarks.forEach((lm) => {
+                    const invX = ((lm.x - 0.5 - mapOffsetX) / mapScale + 0.5) * 140;
+                    const invY = ((lm.y - 0.5 - mapOffsetY) / mapScale + 0.5) * 140;
+                    if (invX >= 0 && invX <= 140 && invY >= 0 && invY <= 140) {
+                      cropCtx.strokeStyle = lm.color;
+                      cropCtx.lineWidth = 1;
+                      cropCtx.setLineDash([2, 2]);
+                      cropCtx.beginPath(); cropCtx.arc(invX, invY, 10, 0, 2 * Math.PI); cropCtx.stroke();
+                      cropCtx.setLineDash([]);
+                      cropCtx.fillStyle = lm.color;
+                      cropCtx.font = 'bold 9px monospace';
+                      cropCtx.fillText(`⌖${lm.name}`, invX - 6, invY - 12);
+                    }
+                  });
+                }
 
                 validT.forEach((b) => {
                   const px = (b.sumX / b.count / rw) * 140;
@@ -763,16 +839,19 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
               cvCtx.fillText(`CT${i + 1}`, cx + 11, cy + 4);
             });
 
-            // 5. Assemble Detected Players with smoothed temporal positions
+            // 5. Assemble Detected Players with calibrated coordinate transformation & temporal smoothing
             const detectedPlayers: DetectedPlayer[] = [];
             const tPos: [number, number][] = [];
 
             validT.forEach((b, i) => {
-              const rawX = Math.min(0.96, Math.max(0.04, (b.sumX / b.count) / rw));
-              const rawY = Math.min(0.96, Math.max(0.04, (b.sumY / b.count) / rh));
-              const prev = prevPositionsRef.current.get(i) || { x: rawX, y: rawY };
-              const smoothX = prev.x * 0.35 + rawX * 0.65;
-              const smoothY = prev.y * 0.35 + rawY * 0.65;
+              const rawX = (b.sumX / b.count) / rw;
+              const rawY = (b.sumY / b.count) / rh;
+              const calX = Math.min(0.96, Math.max(0.04, (rawX - 0.5) * mapScale + 0.5 + mapOffsetX));
+              const calY = Math.min(0.96, Math.max(0.04, (rawY - 0.5) * mapScale + 0.5 + mapOffsetY));
+
+              const prev = prevPositionsRef.current.get(i) || { x: calX, y: calY };
+              const smoothX = prev.x * 0.30 + calX * 0.70;
+              const smoothY = prev.y * 0.30 + calY * 0.70;
               prevPositionsRef.current.set(i, { x: smoothX, y: smoothY });
               tPos.push([smoothX, smoothY]);
 
@@ -800,12 +879,15 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
             });
 
             validCT.forEach((b, i) => {
-              const rawX = Math.min(0.96, Math.max(0.04, (b.sumX / b.count) / rw));
-              const rawY = Math.min(0.96, Math.max(0.04, (b.sumY / b.count) / rh));
+              const rawX = (b.sumX / b.count) / rw;
+              const rawY = (b.sumY / b.count) / rh;
+              const calX = Math.min(0.96, Math.max(0.04, (rawX - 0.5) * mapScale + 0.5 + mapOffsetX));
+              const calY = Math.min(0.96, Math.max(0.04, (rawY - 0.5) * mapScale + 0.5 + mapOffsetY));
+
               const slot = 5 + i;
-              const prev = prevPositionsRef.current.get(slot) || { x: rawX, y: rawY };
-              const smoothX = prev.x * 0.35 + rawX * 0.65;
-              const smoothY = prev.y * 0.35 + rawY * 0.65;
+              const prev = prevPositionsRef.current.get(slot) || { x: calX, y: calY };
+              const smoothX = prev.x * 0.30 + calX * 0.70;
+              const smoothY = prev.y * 0.30 + calY * 0.70;
               prevPositionsRef.current.set(slot, { x: smoothX, y: smoothY });
 
               detectedPlayers.push({
@@ -942,7 +1024,7 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
     return () => {
       if (animationLoopRef.current) cancelAnimationFrame(animationLoopRef.current);
     };
-  }, [isPlaying, videoUrl, mode, roi, colorSensitivity, inspectedSlot]);
+  }, [isPlaying, videoUrl, mode, roi, colorSensitivity, inspectedSlot, mapScale, mapOffsetX, mapOffsetY, showAlignmentGuides]);
 
   /**
    * Draws the 2D Tactical Radar based on real-time CV coordinates
@@ -978,6 +1060,33 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
     ctx.font = '900 15px monospace';
     ctx.fillText('SITE A', size * 0.41, size * 0.65);
     ctx.fillText('SITE B', size * 0.70, size * 0.35);
+
+    // Mirage Landmark Alignment Calibration Guides
+    if (showAlignmentGuides) {
+      const landmarks = [
+        { name: 'SITE A (BOMB)', x: 0.43, y: 0.65, color: '#f59e0b' },
+        { name: 'SITE B (BOMB)', x: 0.70, y: 0.35, color: '#10b981' },
+        { name: 'MID WINDOW', x: 0.52, y: 0.45, color: '#38bdf8' },
+        { name: 'T SPAWN', x: 0.24, y: 0.78, color: '#ea580c' },
+        { name: 'CT SPAWN', x: 0.82, y: 0.32, color: '#06b6d4' },
+      ];
+      landmarks.forEach((lm) => {
+        const lx = lm.x * size;
+        const ly = lm.y * size;
+        ctx.strokeStyle = lm.color;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(lx, ly, 18, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = lm.color;
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`📍 ${lm.name}`, lx, ly - 22);
+      });
+    }
 
     // 3. Render Detected Players
     players.forEach((p) => {
@@ -1100,6 +1209,58 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
       videoRef.current.play();
       setIsPlaying(true);
     }
+  };
+
+  // Interactive Mouse Drag-to-Select ROI Handlers on Video
+  const handleVideoMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+    setIsBoxDragging(true);
+    setDragStart({ x, y });
+    setDragCurrent({ x, y });
+  };
+
+  const handleVideoMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isBoxDragging || !dragStart) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+    setDragCurrent({ x, y });
+  };
+
+  const handleVideoMouseUp = () => {
+    if (isBoxDragging && dragStart && dragCurrent) {
+      const minX = Math.min(dragStart.x, dragCurrent.x);
+      const minY = Math.min(dragStart.y, dragCurrent.y);
+      const w = Math.abs(dragCurrent.x - dragStart.x);
+      const h = Math.abs(dragCurrent.y - dragStart.y);
+
+      // Only update if selection box is large enough (> 2% video dimensions)
+      if (w > 0.02 && h > 0.02) {
+        setRoi({
+          xPct: Math.round(minX * 1000) / 1000,
+          yPct: Math.round(minY * 1000) / 1000,
+          wPct: Math.round(w * 1000) / 1000,
+          hPct: Math.round(h * 1000) / 1000,
+        });
+        setRoiPreset('custom');
+        addTacticalLog(
+          `Minimap ROI set by mouse drag: ${(w * 100).toFixed(1)}% × ${(h * 100).toFixed(1)}% at (${(minX * 100).toFixed(1)}%, ${(minY * 100).toFixed(1)}%)`,
+          '#10b981'
+        );
+      }
+    }
+    setIsBoxDragging(false);
+    setDragStart(null);
+    setDragCurrent(null);
+  };
+
+  const handleResetMapCalibration = () => {
+    setMapScale(1.05);
+    setMapOffsetX(0.0);
+    setMapOffsetY(0.0);
+    addTacticalLog('Map radar calibration reset to default 1.05x center alignment.', '#38bdf8');
   };
 
   return (
@@ -1449,8 +1610,22 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
             </div>
           </div>
 
-          {/* Video Container with Overlaid Detection Canvas */}
-          <div style={{ position: 'relative', width: '100%', borderRadius: 8, overflow: 'hidden', background: '#000' }}>
+          {/* Video Container with Overlaid Detection Canvas & Drag-to-Select ROI */}
+          <div
+            onMouseDown={handleVideoMouseDown}
+            onMouseMove={handleVideoMouseMove}
+            onMouseUp={handleVideoMouseUp}
+            onMouseLeave={handleVideoMouseUp}
+            style={{
+              position: 'relative',
+              width: '100%',
+              borderRadius: 8,
+              overflow: 'hidden',
+              background: '#000',
+              cursor: isBoxDragging ? 'crosshair' : 'crosshair',
+              userSelect: 'none',
+            }}
+          >
             {(videoUrl || isLiveStream) && (
               <video
                 ref={videoRef}
@@ -1460,8 +1635,30 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
                 muted
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
-                style={{ width: '100%', display: 'block', maxHeight: 480, objectFit: 'contain' }}
+                style={{ width: '100%', display: 'block', maxHeight: 480, objectFit: 'contain', pointerEvents: 'none' }}
               />
+            )}
+
+            {/* Interactive Drag Selection Box Overlay */}
+            {isBoxDragging && dragStart && dragCurrent && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${Math.min(dragStart.x, dragCurrent.x) * 100}%`,
+                  top: `${Math.min(dragStart.y, dragCurrent.y) * 100}%`,
+                  width: `${Math.abs(dragCurrent.x - dragStart.x) * 100}%`,
+                  height: `${Math.abs(dragCurrent.y - dragStart.y) * 100}%`,
+                  border: '2px dashed #facc15',
+                  background: 'rgba(250, 204, 21, 0.22)',
+                  boxShadow: '0 0 14px rgba(250, 204, 21, 0.6)',
+                  pointerEvents: 'none',
+                  zIndex: 20,
+                }}
+              >
+                <div style={{ position: 'absolute', top: -22, left: 0, background: '#facc15', color: '#000', fontSize: 10, fontWeight: 900, padding: '2px 6px', borderRadius: 3, whiteSpace: 'nowrap' }}>
+                  🎯 CALIBRATING RADAR SCANNER
+                </div>
+              </div>
             )}
 
             {/* Canvas overlay for CV detection bounding boxes */}
@@ -1478,6 +1675,14 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
                 pointerEvents: 'none',
               }}
             />
+          </div>
+
+          {/* Quick Helper Banner */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, fontSize: 11, color: '#94a3b8' }}>
+            <span>💡 <strong>Tip:</strong> Click & drag directly on the video to frame the radar minimap.</span>
+            {roiPreset === 'custom' && (
+              <span style={{ color: '#10b981', fontWeight: 800 }}>✓ Custom ROI Active</span>
+            )}
           </div>
 
           {/* Video Transport Controls */}
@@ -1680,6 +1885,89 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
                   </div>
                   <div style={{ fontSize: 9, color: '#64748b', textAlign: 'center', marginTop: 4 }}>
                     Align green box over broadcast radar. Clustered dots appear in real time.
+                  </div>
+                </div>
+
+                {/* 2D Tactical Radar Map Alignment & Landmarks Calibration Controls */}
+                <div style={{ gridColumn: '1 / -1', marginTop: 10, paddingTop: 10, borderTop: '1px solid #1e293b' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: '#facc15' }}>🗺 2D RADAR MAP ALIGNMENT (DE_MIRAGE.PNG)</span>
+                      <span style={{ fontSize: 9, color: '#94a3b8' }}>Fine-tune radar overlay coordinates to match broadcast video</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => setShowAlignmentGuides(!showAlignmentGuides)}
+                        style={{
+                          background: showAlignmentGuides ? 'rgba(250, 204, 21, 0.25)' : '#1e293b',
+                          border: `1px solid ${showAlignmentGuides ? '#facc15' : '#334155'}`,
+                          color: showAlignmentGuides ? '#facc15' : '#94a3b8',
+                          padding: '3px 8px',
+                          borderRadius: 4,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {showAlignmentGuides ? '📐 Hide Landmark Guides' : '📐 Show Mirage Landmarks'}
+                      </button>
+                      <button
+                        onClick={handleResetMapCalibration}
+                        style={{
+                          background: '#1e293b',
+                          border: '1px solid #334155',
+                          color: '#94a3b8',
+                          padding: '3px 8px',
+                          borderRadius: 4,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        🔄 Reset Calibration
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 2 }}>
+                        <span style={{ color: '#94a3b8' }}>Map Zoom Scale:</span>
+                        <span className="font-mono" style={{ color: '#facc15', fontWeight: 800 }}>{mapScale.toFixed(2)}x</span>
+                      </div>
+                      <input
+                        type="range" min="0.75" max="1.45" step="0.01"
+                        value={mapScale}
+                        onChange={(e) => setMapScale(parseFloat(e.target.value))}
+                        style={{ width: '100%', accentColor: '#facc15', cursor: 'pointer' }}
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 2 }}>
+                        <span style={{ color: '#94a3b8' }}>Map Offset X:</span>
+                        <span className="font-mono" style={{ color: '#38bdf8', fontWeight: 800 }}>{(mapOffsetX * 100).toFixed(1)}%</span>
+                      </div>
+                      <input
+                        type="range" min="-0.25" max="0.25" step="0.005"
+                        value={mapOffsetX}
+                        onChange={(e) => setMapOffsetX(parseFloat(e.target.value))}
+                        style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, marginBottom: 2 }}>
+                        <span style={{ color: '#94a3b8' }}>Map Offset Y:</span>
+                        <span className="font-mono" style={{ color: '#38bdf8', fontWeight: 800 }}>{(mapOffsetY * 100).toFixed(1)}%</span>
+                      </div>
+                      <input
+                        type="range" min="-0.25" max="0.25" step="0.005"
+                        value={mapOffsetY}
+                        onChange={(e) => setMapOffsetY(parseFloat(e.target.value))}
+                        style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
