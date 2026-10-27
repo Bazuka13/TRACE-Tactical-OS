@@ -74,6 +74,11 @@ export interface RadarROI {
 }
 
 const ROI_PRESETS: Record<string, { label: string; desc: string; roi: RadarROI }> = {
+  youtube_split: {
+    label: '🪟 YouTube Windowed / Faceit POV',
+    desc: 'Tuned for YouTube windowed CS2 streams (e.g. donk Faceit Mirage POV)',
+    roi: { xPct: 0.010, yPct: 0.105, wPct: 0.135, hPct: 0.160 },
+  },
   gameplay_recording: {
     label: '🎬 Gameplay Recording (16:9)',
     desc: 'Calibrated for CS2 gameplay recordings & Underpass match streams',
@@ -84,11 +89,6 @@ const ROI_PRESETS: Record<string, { label: string; desc: string; roi: RadarROI }
     desc: 'Tuned for PGL 2024 Copenhagen Major overlay (excludes top header)',
     roi: { xPct: 0.012, yPct: 0.096, wPct: 0.155, hPct: 0.205 },
   },
-  youtube_split: {
-    label: '🪟 YouTube Windowed (Left Half)',
-    desc: 'Compensates for browser search bar and window margins',
-    roi: { xPct: 0.010, yPct: 0.118, wPct: 0.148, hPct: 0.198 },
-  },
   cs2_fullscreen: {
     label: '🖥 Full Screen CS2 (Default)',
     desc: 'Standard top-left CS2 spectator radar overview',
@@ -97,7 +97,7 @@ const ROI_PRESETS: Record<string, { label: string; desc: string; roi: RadarROI }
   custom: {
     label: '⚙️ Custom / Drag-Selected ROI',
     desc: 'Drag box on video with mouse or use fine-tune sliders',
-    roi: { xPct: 0.005, yPct: 0.007, wPct: 0.200, hPct: 0.266 },
+    roi: { xPct: 0.010, yPct: 0.105, wPct: 0.135, hPct: 0.160 },
   },
 };
 
@@ -135,8 +135,8 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
   const [showLiveGuideModal, setShowLiveGuideModal] = useState(false);
 
   // Minimap ROI Calibration State (Solves mismatch on real streams!)
-  const [roiPreset, setRoiPreset] = useState<string>('gameplay_recording');
-  const [roi, setRoi] = useState<RadarROI>(ROI_PRESETS.gameplay_recording.roi);
+  const [roiPreset, setRoiPreset] = useState<string>('youtube_split');
+  const [roi, setRoi] = useState<RadarROI>(ROI_PRESETS.youtube_split.roi);
   const [showRoiCalibrator, setShowRoiCalibrator] = useState<boolean>(true);
   const [colorSensitivity, setColorSensitivity] = useState<number>(1.0);
   const roiCropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -252,8 +252,38 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
     { id: 3, time: '16:14:05', text: 'Mirage Tactical Radar map loaded. 10 player telemetry channels ready.', color: '#facc15' },
   ]);
 
-  // Tracking History Ref for smooth coordinate interpolation
-  const prevPositionsRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  // Persistent Player Slot State Ref for Nearest-Neighbor Hungarian Tracking
+  interface PersistentPlayerSlot {
+    slot: number;
+    team: 0 | 1;
+    x: number;
+    y: number;
+    prevX: number;
+    prevY: number;
+    cropX: number;
+    cropY: number;
+    yaw: number;
+    hp: number;
+    speed: number;
+    alive: boolean;
+    lostFrames: number;
+    threat: number;
+  }
+
+  const persistentSlotsRef = useRef<PersistentPlayerSlot[]>([
+    // Slots 0..4: Terrorists (team: 0)
+    { slot: 0, team: 0, x: 0.798, y: 0.587, prevX: 0.798, prevY: 0.587, cropX: 70, cropY: 70, yaw: 315, hp: 1.0, speed: 215, alive: true, lostFrames: 0, threat: 0.42 },
+    { slot: 1, team: 0, x: 0.718, y: 0.658, prevX: 0.718, prevY: 0.658, cropX: 70, cropY: 70, yaw: 300, hp: 1.0, speed: 220, alive: true, lostFrames: 0, threat: 0.38 },
+    { slot: 2, team: 0, x: 0.781, y: 0.707, prevX: 0.781, prevY: 0.707, cropX: 70, cropY: 70, yaw: 350, hp: 1.0, speed: 210, alive: true, lostFrames: 0, threat: 0.35 },
+    { slot: 3, team: 0, x: 0.620, y: 0.600, prevX: 0.620, prevY: 0.600, cropX: 70, cropY: 70, yaw: 0, hp: 1.0, speed: 215, alive: true, lostFrames: 0, threat: 0.30 },
+    { slot: 4, team: 0, x: 0.320, y: 0.450, prevX: 0.320, prevY: 0.450, cropX: 70, cropY: 70, yaw: 45, hp: 1.0, speed: 215, alive: true, lostFrames: 0, threat: 0.28 },
+    // Slots 5..9: Counter-Terrorists (team: 1)
+    { slot: 5, team: 1, x: 0.478, y: 0.722, prevX: 0.478, prevY: 0.722, cropX: 70, cropY: 70, yaw: 135, hp: 1.0, speed: 190, alive: true, lostFrames: 0, threat: 0.32 },
+    { slot: 6, team: 1, x: 0.422, y: 0.263, prevX: 0.422, prevY: 0.263, cropX: 70, cropY: 70, yaw: 180, hp: 1.0, speed: 195, alive: true, lostFrames: 0, threat: 0.35 },
+    { slot: 7, team: 1, x: 0.480, y: 0.263, prevX: 0.480, prevY: 0.263, cropX: 70, cropY: 70, yaw: 180, hp: 1.0, speed: 200, alive: true, lostFrames: 0, threat: 0.30 },
+    { slot: 8, team: 1, x: 0.232, y: 0.362, prevX: 0.232, prevY: 0.362, cropX: 70, cropY: 70, yaw: 220, hp: 1.0, speed: 185, alive: true, lostFrames: 0, threat: 0.25 },
+    { slot: 9, team: 1, x: 0.180, y: 0.186, prevX: 0.180, prevY: 0.186, cropX: 70, cropY: 70, yaw: 240, hp: 1.0, speed: 190, alive: true, lostFrames: 0, threat: 0.22 },
+  ]);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -294,8 +324,9 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
         const vids: ServerVideo[] = data.videos || [];
         setServerVideos(vids);
         
-        // Pick the user uploaded gameplay video or automated sample
-        const userVid = vids.find((v) => !v.is_sample && v.filename.endsWith('.mp4'));
+        // Pick the user uploaded gameplay video or screen recording
+        const userVid = vids.find((v) => v.filename === 'Screen Recording 2026-10-27 170222.mp4')
+          || vids.find((v) => !v.is_sample && v.filename.endsWith('.mp4'));
         const sample = userVid || vids.find((v) => v.is_sample || v.filename === 'sample_gameplay.mp4') || vids[0];
         if (sample) {
           setVideoUrl(`${apiBase}${sample.url}`);
@@ -754,17 +785,24 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
             }
 
             // Cluster Geometry & Overlap Splitting Filter:
-            // Eliminates single-pixel artifacts and resolves overlapping teammate icons (e.g. 2 CTs stacked in Mid)
+            // Eliminates single-pixel noise, sandstone walls, and resolves overlapping teammate icons
             const resolveClusters = (rawBlobs: ColorBlob[]) => {
               const result: { cx: number; cy: number; count: number }[] = [];
               for (const b of rawBlobs) {
                 const bw = b.maxX - b.minX + 1;
                 const bh = b.maxY - b.minY + 1;
                 const aspect = bw / Math.max(1, bh);
-                if (b.count < 3 || bw > 36 || bh > 36 || aspect < 0.28 || aspect > 3.5) continue;
-                
-                // If two players overlap tightly in a choke point (large blob count and wide box)
-                if (b.count >= 22 && (bw >= 16 || bh >= 16)) {
+
+                // Reject noise < 4 pixels or large background elements > 45 pixels
+                // Real CS2 minimap player dots are 6-36 pixels in size
+                if (b.count < 4 || b.count > 45) continue;
+                if (bw > 28 || bh > 28 || aspect < 0.28 || aspect > 3.5) continue;
+
+                // Discard clusters in the bottom 15% of the crop where "Bombsite A" / sandstone wall text appears
+                if (b.sumY / b.count > rh * 0.85) continue;
+
+                // If two players overlap tightly in a choke point
+                if (b.count >= 24 && (bw >= 15 || bh >= 15)) {
                   if (bw >= bh) {
                     const mid = (b.minX + b.maxX) / 2;
                     result.push({ cx: b.minX * 0.7 + mid * 0.3, cy: b.sumY / b.count, count: Math.round(b.count / 2) });
@@ -778,11 +816,125 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
                   result.push({ cx: b.sumX / b.count, cy: b.sumY / b.count, count: b.count });
                 }
               }
-              return result.sort((a, b) => b.count - a.count).slice(0, 5);
+              return result;
             };
 
             const validT = resolveClusters(blobsT);
             const validCT = resolveClusters(blobsCT);
+
+            // Transform raw blob coordinates into calibrated de_mirage.png tactical map coordinates
+            const transformBlob = (b: { cx: number; cy: number; count: number }) => {
+              const normX = b.cx / rw;
+              const normY = b.cy / rh;
+              const baseCalX = 1.106 * normX - 0.056 * normY - 0.024;
+              const baseCalY = 0.015 * normX + 0.942 * normY + 0.002;
+              const calX = Math.min(0.96, Math.max(0.04, (baseCalX - 0.5) * mapScale + 0.5 + mapOffsetX));
+              const calY = Math.min(0.96, Math.max(0.04, (baseCalY - 0.5) * mapScale + 0.5 + mapOffsetY));
+              return { cx: b.cx, cy: b.cy, count: b.count, calX, calY };
+            };
+
+            const candsT = validT.map(transformBlob);
+            const candsCT = validCT.map(transformBlob);
+
+            // Persistent Nearest-Neighbor Slot Matching Algorithm:
+            // Prevents random identity swapping, jitter, and teleportation across the map
+            const matchAndTrackTeam = (
+              candidates: { cx: number; cy: number; count: number; calX: number; calY: number }[],
+              teamSlots: PersistentPlayerSlot[],
+              maxJumpDist = 0.20,
+              alpha = 0.60
+            ) => {
+              const matchedSlots = new Set<number>();
+              const matchedCands = new Set<number>();
+
+              // 1. Build distance matrix between active slots and detected candidate blobs
+              const pairs: { dist: number; sIdx: number; cIdx: number }[] = [];
+              teamSlots.forEach((slot, sIdx) => {
+                if (!slot.alive && slot.lostFrames >= 45) return;
+                candidates.forEach((cand, cIdx) => {
+                  const d = Math.hypot(slot.x - cand.calX, slot.y - cand.calY);
+                  if (d <= maxJumpDist) {
+                    pairs.push({ dist: d, sIdx, cIdx });
+                  }
+                });
+              });
+
+              // 2. Greedy match in ascending distance order
+              pairs.sort((a, b) => a.dist - b.dist);
+              for (const p of pairs) {
+                if (matchedSlots.has(p.sIdx) || matchedCands.has(p.cIdx)) continue;
+                matchedSlots.add(p.sIdx);
+                matchedCands.add(p.cIdx);
+
+                const slot = teamSlots[p.sIdx];
+                const cand = candidates[p.cIdx];
+
+                const dx = cand.calX - slot.x;
+                const dy = cand.calY - slot.y;
+                const moveDist = Math.hypot(dx, dy);
+                if (moveDist > 0.003) {
+                  slot.yaw = Math.round((Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360);
+                  slot.speed = Math.min(250, Math.round(180 + moveDist * 2000));
+                }
+
+                slot.prevX = slot.x;
+                slot.prevY = slot.y;
+                slot.x = slot.x * (1 - alpha) + cand.calX * alpha;
+                slot.y = slot.y * (1 - alpha) + cand.calY * alpha;
+                slot.cropX = cand.cx;
+                slot.cropY = cand.cy;
+                slot.lostFrames = 0;
+                slot.alive = true;
+              }
+
+              // 3. Unmatched candidates initialize vacant / oldest dead slots
+              for (let cIdx = 0; cIdx < candidates.length; cIdx++) {
+                if (matchedCands.has(cIdx)) continue;
+                let bestSlotIdx = -1;
+                let maxLost = -1;
+                for (let sIdx = 0; sIdx < teamSlots.length; sIdx++) {
+                  if (matchedSlots.has(sIdx)) continue;
+                  const slot = teamSlots[sIdx];
+                  if (!slot.alive) {
+                    if (bestSlotIdx === -1 || slot.lostFrames > maxLost) {
+                      bestSlotIdx = sIdx;
+                      maxLost = slot.lostFrames;
+                    }
+                  } else if (slot.lostFrames > 15 && slot.lostFrames > maxLost) {
+                    bestSlotIdx = sIdx;
+                    maxLost = slot.lostFrames;
+                  }
+                }
+
+                if (bestSlotIdx >= 0) {
+                  const slot = teamSlots[bestSlotIdx];
+                  const cand = candidates[cIdx];
+                  slot.x = cand.calX;
+                  slot.y = cand.calY;
+                  slot.prevX = cand.calX;
+                  slot.prevY = cand.calY;
+                  slot.cropX = cand.cx;
+                  slot.cropY = cand.cy;
+                  slot.lostFrames = 0;
+                  slot.alive = true;
+                  matchedSlots.add(bestSlotIdx);
+                  matchedCands.add(cIdx);
+                }
+              }
+
+              // 4. Age unmatched slots; declare dead after 35 frames (~2.3s) without detection
+              teamSlots.forEach((slot, sIdx) => {
+                if (!matchedSlots.has(sIdx)) {
+                  slot.lostFrames++;
+                  if (slot.lostFrames >= 35) {
+                    slot.alive = false;
+                  }
+                }
+              });
+            };
+
+            matchAndTrackTeam(candsT, persistentSlotsRef.current.slice(0, 5));
+            matchAndTrackTeam(candsCT, persistentSlotsRef.current.slice(5, 10));
 
             // Render live zoomed radar crop preview
             if (roiCropCanvasRef.current) {
@@ -820,140 +972,88 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
                   });
                 }
 
-                validT.forEach((b) => {
-                  const px = (b.cx / rw) * 140;
-                  const py = (b.cy / rh) * 140;
-                  cropCtx.fillStyle = '#f97316';
-                  cropCtx.beginPath(); cropCtx.arc(px, py, 5, 0, 2 * Math.PI); cropCtx.fill();
-                  cropCtx.strokeStyle = '#fff'; cropCtx.lineWidth = 1.5; cropCtx.stroke();
-                });
-
-                validCT.forEach((b) => {
-                  const px = (b.cx / rw) * 140;
-                  const py = (b.cy / rh) * 140;
-                  cropCtx.fillStyle = '#06b6d4';
+                // Draw persistent tracked dots on sensor crop preview
+                persistentSlotsRef.current.forEach((slot) => {
+                  if (!slot.alive) return;
+                  const px = (slot.cropX / rw) * 140;
+                  const py = (slot.cropY / rh) * 140;
+                  const isT = slot.team === 0;
+                  cropCtx.fillStyle = isT ? '#f97316' : '#06b6d4';
                   cropCtx.beginPath(); cropCtx.arc(px, py, 5, 0, 2 * Math.PI); cropCtx.fill();
                   cropCtx.strokeStyle = '#fff'; cropCtx.lineWidth = 1.5; cropCtx.stroke();
                 });
               }
             }
 
-            // Draw player crosshairs over the main video overlay
-            validT.forEach((b, i) => {
-              const cx = rx + b.cx;
-              const cy = ry + b.cy;
-              cvCtx.strokeStyle = '#f97316';
+            // Draw player crosshairs over the main video overlay with persistent IDs
+            persistentSlotsRef.current.forEach((slot) => {
+              if (!slot.alive) return;
+              const cx = rx + slot.cropX;
+              const cy = ry + slot.cropY;
+              const isT = slot.team === 0;
+              const label = isT ? `T${slot.slot + 1}` : `CT${slot.slot - 4}`;
+              const color = isT ? '#f97316' : '#06b6d4';
+
+              cvCtx.strokeStyle = color;
               cvCtx.lineWidth = 2;
               cvCtx.beginPath(); cvCtx.arc(cx, cy, 9, 0, 2 * Math.PI); cvCtx.stroke();
-              cvCtx.fillStyle = '#f97316';
+              cvCtx.fillStyle = color;
               cvCtx.font = 'bold 10px monospace';
-              cvCtx.fillText(`T${i + 1}`, cx + 11, cy + 4);
+              cvCtx.fillText(label, cx + 11, cy + 4);
             });
 
-            validCT.forEach((b, i) => {
-              const cx = rx + b.cx;
-              const cy = ry + b.cy;
-              cvCtx.strokeStyle = '#06b6d4';
-              cvCtx.lineWidth = 2;
-              cvCtx.beginPath(); cvCtx.arc(cx, cy, 9, 0, 2 * Math.PI); cvCtx.stroke();
-              cvCtx.fillStyle = '#06b6d4';
-              cvCtx.font = 'bold 10px monospace';
-              cvCtx.fillText(`CT${i + 1}`, cx + 11, cy + 4);
+            // 5. Assemble Detected Players with consistent slot telemetry and dynamic directives
+            const detectedPlayers: DetectedPlayer[] = persistentSlotsRef.current.map((slot) => {
+              const isT = slot.team === 0;
+              const dynamicThreat = Math.min(0.92, Math.max(0.15, slot.threat + Math.sin(now / 500 + slot.slot) * 0.15));
+              
+              let directive = isT ? 'Hold spacing and advance site choke' : 'Anchor defensive sector';
+              let factors: Factor[] = [
+                { text: isT ? 'Sightline Exposure' : 'Defensive Anchor Advantage', up: true, share: 44 },
+                { text: isT ? 'Site Infiltration Angle' : 'Crossfire Partner Setup', up: true, share: 36 },
+                { text: 'Teammate Spacing', up: false, share: 20 },
+              ];
+
+              if (slot.y > 0.62 && slot.x > 0.58) {
+                directive = isT ? 'A Ramp push: Coordinate flashbang with Palace entry.' : 'A Site Anchor: Hold crossfire with Jungle/Stairs.';
+              } else if (slot.y < 0.38 && slot.x < 0.35) {
+                directive = isT ? 'B Apartments attack: Clear Van and Site B pillar.' : 'B Site Anchor: Hold Apartments window and Apps choke.';
+              } else if (slot.x > 0.35 && slot.x < 0.60 && slot.y < 0.45) {
+                directive = isT ? 'Mid control: Smoke window and contest connector.' : 'Mid Sniper Nest: Hold Catwalk and Underpass sightline.';
+              }
+
+              return {
+                slot: slot.slot,
+                team: slot.team,
+                x: slot.x,
+                y: slot.y,
+                yaw: slot.yaw,
+                hp: slot.hp,
+                weapon_dps: isT ? 0.85 : 0.80,
+                speed: slot.speed,
+                alive: slot.alive,
+                threat: dynamicThreat,
+                is_isolated: slot.slot === 0 ? 1 : 0,
+                has_crossfire: slot.slot > 0 ? 1 : 0,
+                dist_enemy: 420 + (slot.slot % 5) * 60,
+                directive,
+                factors,
+              };
             });
 
-            // 5. Assemble Detected Players with calibrated coordinate transformation & temporal smoothing
-            const detectedPlayers: DetectedPlayer[] = [];
-            const tPos: [number, number][] = [];
-
-            validT.forEach((b, i) => {
-              const normX = b.cx / rw;
-              const normY = b.cy / rh;
-
-              // High-precision affine transform mapping minimap crop directly to de_mirage.png coordinates:
-              // Accounts for rectangular crop aspect ratio (1.337) and slight CS2 camera perspective
-              const baseCalX = 1.106 * normX - 0.056 * normY - 0.024;
-              const baseCalY = 0.015 * normX + 0.942 * normY + 0.002;
-
-              const calX = Math.min(0.96, Math.max(0.04, (baseCalX - 0.5) * mapScale + 0.5 + mapOffsetX));
-              const calY = Math.min(0.96, Math.max(0.04, (baseCalY - 0.5) * mapScale + 0.5 + mapOffsetY));
-
-              const prev = prevPositionsRef.current.get(i) || { x: calX, y: calY };
-              const smoothX = prev.x * 0.30 + calX * 0.70;
-              const smoothY = prev.y * 0.30 + calY * 0.70;
-              prevPositionsRef.current.set(i, { x: smoothX, y: smoothY });
-              tPos.push([smoothX, smoothY]);
-
-              detectedPlayers.push({
-                slot: i,
-                team: 0,
-                x: smoothX,
-                y: smoothY,
-                yaw: (i * 45) % 360,
-                hp: 1.0,
-                weapon_dps: 0.85,
-                speed: 215,
-                alive: true,
-                threat: 0.35 + Math.sin(now / 500 + i) * 0.25,
-                is_isolated: i === 0 ? 1 : 0,
-                has_crossfire: i > 0 ? 1 : 0,
-                dist_enemy: 420 + i * 80,
-                directive: i === 1 ? 'CRITICAL THREAT: Ambush risk at Palace exit; deploy smoke and check stairs.' : 'Maintain crossfire coverage and site entry timing.',
-                factors: [
-                  { text: 'Sightline Exposure', up: true, share: 44 },
-                  { text: 'Site Infiltration Angle', up: true, share: 36 },
-                  { text: 'Teammate Spacing', up: false, share: 20 },
-                ],
-              });
-            });
-
-            validCT.forEach((b, i) => {
-              const normX = b.cx / rw;
-              const normY = b.cy / rh;
-
-              const baseCalX = 1.106 * normX - 0.056 * normY - 0.024;
-              const baseCalY = 0.015 * normX + 0.942 * normY + 0.002;
-
-              const calX = Math.min(0.96, Math.max(0.04, (baseCalX - 0.5) * mapScale + 0.5 + mapOffsetX));
-              const calY = Math.min(0.96, Math.max(0.04, (baseCalY - 0.5) * mapScale + 0.5 + mapOffsetY));
-
-              const slot = 5 + i;
-              const prev = prevPositionsRef.current.get(slot) || { x: calX, y: calY };
-              const smoothX = prev.x * 0.30 + calX * 0.70;
-              const smoothY = prev.y * 0.30 + calY * 0.70;
-              prevPositionsRef.current.set(slot, { x: smoothX, y: smoothY });
-
-              detectedPlayers.push({
-                slot,
-                team: 1,
-                x: smoothX,
-                y: smoothY,
-                yaw: (180 + i * 35) % 360,
-                hp: 0.95,
-                weapon_dps: 0.80,
-                speed: 190,
-                alive: true,
-                threat: 0.25 + Math.cos(now / 600 + i) * 0.2,
-                is_isolated: 0,
-                has_crossfire: 1,
-                dist_enemy: 510,
-                directive: 'Hold site anchor posture; verify catwalk flank clearance.',
-                factors: [
-                  { text: 'Defensive Anchor Advantage', up: false, share: 45 },
-                  { text: 'Crossfire Partner Setup', up: false, share: 35 },
-                ],
-              });
-            });
-
-            const tCount = Math.max(1, validT.length || detectedT);
-            const ctCount = Math.max(1, validCT.length || detectedCT);
-            setDetectedT(tCount);
-            setDetectedCT(ctCount);
+            const aliveT = detectedPlayers.filter(p => p.team === 0 && p.alive).length;
+            const aliveCT = detectedPlayers.filter(p => p.team === 1 && p.alive).length;
+            const tCount = Math.max(1, aliveT);
+            const ctCount = Math.max(1, aliveCT);
+            setDetectedT(aliveT);
+            setDetectedCT(aliveCT);
 
             // Compute Site A vs Site B prediction
+            const tPositions = detectedPlayers.filter(p => p.team === 0 && p.alive).map(p => [p.x, p.y]);
             let attCx = 0.5, attCy = 0.5;
-            if (tPos.length > 0) {
-              attCx = tPos.reduce((sum, p) => sum + p[0], 0) / tPos.length;
-              attCy = tPos.reduce((sum, p) => sum + p[1], 0) / tPos.length;
+            if (tPositions.length > 0) {
+              attCx = tPositions.reduce((sum, p) => sum + p[0], 0) / tPositions.length;
+              attCy = tPositions.reduce((sum, p) => sum + p[1], 0) / tPositions.length;
             }
             const distA = Math.hypot(attCx - 0.54, attCy - 0.74);
             const distB = Math.hypot(attCx - 0.22, attCy - 0.27);
@@ -1645,69 +1745,88 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
 
           {/* Video Container with Overlaid Detection Canvas & Drag-to-Select ROI */}
           <div
-            onMouseDown={handleVideoMouseDown}
-            onMouseMove={handleVideoMouseMove}
-            onMouseUp={handleVideoMouseUp}
-            onMouseLeave={handleVideoMouseUp}
             style={{
               position: 'relative',
               width: '100%',
               borderRadius: 8,
               overflow: 'hidden',
-              background: '#000',
-              cursor: isBoxDragging ? 'crosshair' : 'crosshair',
+              background: '#040711',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
               userSelect: 'none',
+              border: '1px solid #1e293b',
             }}
           >
-            {(videoUrl || isLiveStream) && (
-              <video
-                ref={videoRef}
-                src={isLiveStream ? undefined : videoUrl || undefined}
-                loop={!isLiveStream}
-                playsInline
-                muted
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                style={{ width: '100%', display: 'block', maxHeight: 480, objectFit: 'contain', pointerEvents: 'none' }}
-              />
-            )}
+            <div
+              onMouseDown={handleVideoMouseDown}
+              onMouseMove={handleVideoMouseMove}
+              onMouseUp={handleVideoMouseUp}
+              onMouseLeave={handleVideoMouseUp}
+              style={{
+                position: 'relative',
+                display: 'inline-block',
+                maxWidth: '100%',
+                cursor: 'crosshair',
+                lineHeight: 0,
+              }}
+            >
+              {(videoUrl || isLiveStream) && (
+                <video
+                  ref={videoRef}
+                  src={isLiveStream ? undefined : videoUrl || undefined}
+                  loop={!isLiveStream}
+                  playsInline
+                  muted
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  style={{
+                    display: 'block',
+                    maxWidth: '100%',
+                    maxHeight: 480,
+                    height: 'auto',
+                    pointerEvents: 'none',
+                  }}
+                />
+              )}
 
-            {/* Interactive Drag Selection Box Overlay */}
-            {isBoxDragging && dragStart && dragCurrent && (
-              <div
+              {/* Interactive Drag Selection Box Overlay */}
+              {isBoxDragging && dragStart && dragCurrent && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${Math.min(dragStart.x, dragCurrent.x) * 100}%`,
+                    top: `${Math.min(dragStart.y, dragCurrent.y) * 100}%`,
+                    width: `${Math.abs(dragCurrent.x - dragStart.x) * 100}%`,
+                    height: `${Math.abs(dragCurrent.y - dragStart.y) * 100}%`,
+                    border: '2px dashed #facc15',
+                    background: 'rgba(250, 204, 21, 0.22)',
+                    boxShadow: '0 0 14px rgba(250, 204, 21, 0.6)',
+                    pointerEvents: 'none',
+                    zIndex: 20,
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: -22, left: 0, background: '#facc15', color: '#000', fontSize: 10, fontWeight: 900, padding: '2px 6px', borderRadius: 3, whiteSpace: 'nowrap' }}>
+                    🎯 CALIBRATING RADAR SCANNER
+                  </div>
+                </div>
+              )}
+
+              {/* Canvas overlay for CV detection bounding boxes */}
+              <canvas
+                ref={cvOverlayCanvasRef}
+                width={1280}
+                height={720}
                 style={{
                   position: 'absolute',
-                  left: `${Math.min(dragStart.x, dragCurrent.x) * 100}%`,
-                  top: `${Math.min(dragStart.y, dragCurrent.y) * 100}%`,
-                  width: `${Math.abs(dragCurrent.x - dragStart.x) * 100}%`,
-                  height: `${Math.abs(dragCurrent.y - dragStart.y) * 100}%`,
-                  border: '2px dashed #facc15',
-                  background: 'rgba(250, 204, 21, 0.22)',
-                  boxShadow: '0 0 14px rgba(250, 204, 21, 0.6)',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
                   pointerEvents: 'none',
-                  zIndex: 20,
                 }}
-              >
-                <div style={{ position: 'absolute', top: -22, left: 0, background: '#facc15', color: '#000', fontSize: 10, fontWeight: 900, padding: '2px 6px', borderRadius: 3, whiteSpace: 'nowrap' }}>
-                  🎯 CALIBRATING RADAR SCANNER
-                </div>
-              </div>
-            )}
-
-            {/* Canvas overlay for CV detection bounding boxes */}
-            <canvas
-              ref={cvOverlayCanvasRef}
-              width={1280}
-              height={720}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                pointerEvents: 'none',
-              }}
-            />
+              />
+            </div>
           </div>
 
           {/* Quick Helper Banner */}
