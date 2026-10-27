@@ -74,6 +74,11 @@ export interface RadarROI {
 }
 
 const ROI_PRESETS: Record<string, { label: string; desc: string; roi: RadarROI }> = {
+  gameplay_recording: {
+    label: '🎬 Gameplay Recording (16:9)',
+    desc: 'Calibrated for CS2 gameplay recordings & Underpass match streams',
+    roi: { xPct: 0.005, yPct: 0.007, wPct: 0.200, hPct: 0.266 },
+  },
   pgl_major: {
     label: '🏆 PGL Major 2024 (Broadcast)',
     desc: 'Tuned for PGL 2024 Copenhagen Major overlay (excludes top header)',
@@ -92,7 +97,7 @@ const ROI_PRESETS: Record<string, { label: string; desc: string; roi: RadarROI }
   custom: {
     label: '⚙️ Custom / Drag-Selected ROI',
     desc: 'Drag box on video with mouse or use fine-tune sliders',
-    roi: { xPct: 0.012, yPct: 0.096, wPct: 0.155, hPct: 0.205 },
+    roi: { xPct: 0.005, yPct: 0.007, wPct: 0.200, hPct: 0.266 },
   },
 };
 
@@ -130,8 +135,8 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
   const [showLiveGuideModal, setShowLiveGuideModal] = useState(false);
 
   // Minimap ROI Calibration State (Solves mismatch on real streams!)
-  const [roiPreset, setRoiPreset] = useState<string>('pgl_major');
-  const [roi, setRoi] = useState<RadarROI>(ROI_PRESETS.pgl_major.roi);
+  const [roiPreset, setRoiPreset] = useState<string>('gameplay_recording');
+  const [roi, setRoi] = useState<RadarROI>(ROI_PRESETS.gameplay_recording.roi);
   const [showRoiCalibrator, setShowRoiCalibrator] = useState<boolean>(true);
   const [colorSensitivity, setColorSensitivity] = useState<number>(1.0);
   const roiCropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -171,7 +176,7 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
     },
     players: [
       {
-        slot: 0, team: 0, x: 0.48, y: 0.78, yaw: 315, hp: 1.0, weapon_dps: 0.85, speed: 215, alive: true, threat: 0.42,
+        slot: 0, team: 0, x: 0.798, y: 0.587, yaw: 315, hp: 1.0, weapon_dps: 0.85, speed: 215, alive: true, threat: 0.42,
         dist_enemy: 480, is_isolated: 0, has_crossfire: 1, directive: 'Entry point: Flash out A-Ramp and execute crossfire onto Ticket Booth.',
         factors: [
           { text: 'Sightline Exposure', up: true, share: 45 },
@@ -180,49 +185,49 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
         ]
       },
       {
-        slot: 1, team: 0, x: 0.42, y: 0.72, yaw: 300, hp: 1.0, weapon_dps: 0.85, speed: 220, alive: true, threat: 0.38,
+        slot: 1, team: 0, x: 0.718, y: 0.658, yaw: 300, hp: 1.0, weapon_dps: 0.85, speed: 220, alive: true, threat: 0.38,
         dist_enemy: 510, is_isolated: 0, has_crossfire: 1, directive: 'Hold Palace stairs; coordinate with Ramp smoke deployment.',
         factors: [{ text: 'Palace Choke Point', up: true, share: 50 }, { text: 'Crossfire Partner Cover', up: false, share: 30 }]
       },
       {
-        slot: 2, team: 0, x: 0.55, y: 0.65, yaw: 350, hp: 1.0, weapon_dps: 0.85, speed: 210, alive: true, threat: 0.35,
-        dist_enemy: 430, is_isolated: 0, has_crossfire: 1, directive: 'Mid window control: Deny sniper sightline from Nest.',
-        factors: [{ text: 'Mid Exposure', up: true, share: 48 }, { text: 'Utility Cover', up: false, share: 28 }]
+        slot: 2, team: 0, x: 0.781, y: 0.707, yaw: 350, hp: 1.0, weapon_dps: 0.85, speed: 210, alive: true, threat: 0.35,
+        dist_enemy: 430, is_isolated: 0, has_crossfire: 1, directive: 'Tetris hold: Anchor A site push with Palace teammate.',
+        factors: [{ text: 'Tetris Choke Cover', up: true, share: 48 }, { text: 'Utility Cover', up: false, share: 28 }]
       },
       {
-        slot: 3, team: 0, x: 0.62, y: 0.60, yaw: 0, hp: 1.0, weapon_dps: 0.80, speed: 215, alive: true, threat: 0.30,
+        slot: 3, team: 0, x: 0.620, y: 0.600, yaw: 0, hp: 1.0, weapon_dps: 0.80, speed: 215, alive: true, threat: 0.30,
         dist_enemy: 550, is_isolated: 0, has_crossfire: 0, directive: 'Underpass flank watch: Hold short angle against push.',
         factors: [{ text: 'Catwalk Sightline', up: true, share: 40 }]
       },
       {
-        slot: 4, team: 0, x: 0.70, y: 0.55, yaw: 45, hp: 1.0, weapon_dps: 0.85, speed: 215, alive: true, threat: 0.28,
+        slot: 4, team: 0, x: 0.320, y: 0.450, yaw: 45, hp: 1.0, weapon_dps: 0.85, speed: 215, alive: true, threat: 0.28,
         dist_enemy: 600, is_isolated: 0, has_crossfire: 1, directive: 'B Apartments lurk: Listen for rotation and anchor footsteps.',
         factors: [{ text: 'Apartments Audio Cue', up: false, share: 35 }]
       },
       {
-        slot: 5, team: 1, x: 0.44, y: 0.58, yaw: 135, hp: 1.0, weapon_dps: 0.80, speed: 190, alive: true, threat: 0.32,
+        slot: 5, team: 1, x: 0.478, y: 0.722, yaw: 135, hp: 1.0, weapon_dps: 0.80, speed: 190, alive: true, threat: 0.32,
         dist_enemy: 480, is_isolated: 0, has_crossfire: 1, directive: 'A-Site Anchor: Hold Ticket crossfire with Jungle partner.',
         factors: [{ text: 'Defensive Anchor Advantage', up: false, share: 50 }]
       },
       {
-        slot: 6, team: 1, x: 0.40, y: 0.52, yaw: 150, hp: 1.0, weapon_dps: 0.80, speed: 195, alive: true, threat: 0.35,
-        dist_enemy: 510, is_isolated: 0, has_crossfire: 1, directive: 'Jungle watch: Cover Palace exit and assist CT stairs.',
-        factors: [{ text: 'High Ground Advantage', up: false, share: 45 }]
+        slot: 6, team: 1, x: 0.422, y: 0.263, yaw: 180, hp: 1.0, weapon_dps: 0.85, speed: 195, alive: true, threat: 0.35,
+        dist_enemy: 510, is_isolated: 0, has_crossfire: 1, directive: 'Sniper Nest: Lock down Mid entrance against T push.',
+        factors: [{ text: 'Sniper Line of Sight', up: false, share: 45 }]
       },
       {
-        slot: 7, team: 1, x: 0.52, y: 0.45, yaw: 180, hp: 1.0, weapon_dps: 0.85, speed: 200, alive: true, threat: 0.30,
-        dist_enemy: 430, is_isolated: 0, has_crossfire: 1, directive: 'Sniper Nest: Lock down Mid entrance against T push.',
-        factors: [{ text: 'Sniper Line of Sight', up: false, share: 60 }]
+        slot: 7, team: 1, x: 0.480, y: 0.263, yaw: 180, hp: 1.0, weapon_dps: 0.85, speed: 200, alive: true, threat: 0.30,
+        dist_enemy: 430, is_isolated: 0, has_crossfire: 1, directive: 'Mid Window partner: Cover Underpass and assist Catwalk.',
+        factors: [{ text: 'Crossfire Line of Sight', up: false, share: 60 }]
       },
       {
-        slot: 8, team: 1, x: 0.68, y: 0.38, yaw: 220, hp: 1.0, weapon_dps: 0.80, speed: 185, alive: true, threat: 0.25,
+        slot: 8, team: 1, x: 0.232, y: 0.362, yaw: 220, hp: 1.0, weapon_dps: 0.80, speed: 185, alive: true, threat: 0.25,
         dist_enemy: 600, is_isolated: 0, has_crossfire: 1, directive: 'B-Site Anchor: Position behind Van; watch Apartments window.',
         factors: [{ text: 'Van Cover Geometry', up: false, share: 50 }]
       },
       {
-        slot: 9, team: 1, x: 0.72, y: 0.32, yaw: 240, hp: 1.0, weapon_dps: 0.80, speed: 190, alive: true, threat: 0.22,
-        dist_enemy: 650, is_isolated: 0, has_crossfire: 1, directive: 'Catwalk rotation support: Prepared to rotate via Market.',
-        factors: [{ text: 'Fast Rotation Path', up: false, share: 40 }]
+        slot: 9, team: 1, x: 0.180, y: 0.186, yaw: 240, hp: 1.0, weapon_dps: 0.80, speed: 190, alive: true, threat: 0.22,
+        dist_enemy: 650, is_isolated: 0, has_crossfire: 1, directive: 'B Apartments forward anchor: Hold close corner against rush.',
+        factors: [{ text: 'Fast Choke Hold', up: false, share: 40 }]
       },
     ],
   };
@@ -289,8 +294,9 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
         const vids: ServerVideo[] = data.videos || [];
         setServerVideos(vids);
         
-        // Pick automated sample video from data/videos/ by default
-        const sample = vids.find((v) => v.is_sample || v.filename === 'sample_gameplay.mp4') || vids[0];
+        // Pick the user uploaded gameplay video or automated sample
+        const userVid = vids.find((v) => !v.is_sample && v.filename.endsWith('.mp4'));
+        const sample = userVid || vids.find((v) => v.is_sample || v.filename === 'sample_gameplay.mp4') || vids[0];
         if (sample) {
           setVideoUrl(`${apiBase}${sample.url}`);
           setVideoName(sample.filename);
@@ -690,14 +696,14 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
                   h = ((r - g) / delta + 4) * 60;
                 }
 
-                // Check Orange/Amber Terrorist Dot:
-                // Hue in [18, 62], Saturation >= 0.40 / sens, Value >= 0.42
-                // Discards sandstone walls (which have Saturation <= 0.35)
-                const isT = h >= 18 && h <= 62 && s >= 0.40 / sens && v >= 0.42 && r > b + 35;
+                // Check Orange/Yellow Terrorist Dot:
+                // Yellow-orange dots have Hue in [20, 85].
+                // We require saturation >= 0.45 / sens to completely eliminate sand walls and background terrain.
+                const isT = (h >= 20 && h <= 85) && (s >= 0.45 / sens) && (v >= 0.35) && (r > b + 22 || g > b + 22);
 
                 // Check Cyan/Sky-Blue Counter-Terrorist Dot:
-                // Hue in [175, 232], Saturation >= 0.30 / sens, Value >= 0.38
-                const isCT = h >= 175 && h <= 232 && s >= 0.30 / sens && v >= 0.38 && b > r + 25;
+                // Hue in [165, 235], Saturation >= 0.25 / sens, Value >= 0.35
+                const isCT = (h >= 165 && h <= 235) && (s >= 0.25 / sens) && (v >= 0.35) && (b > r + 15 || g > r + 10);
 
                 if (isT) {
                   let matched = false;
@@ -747,18 +753,36 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
               }
             }
 
-            // Cluster Geometry & Dimension Filter:
-            // Eliminates large HUD cards, health bars, borders, and single-pixel artifacts.
-            // Player minimap dots are compact circles (width & height <= 26px, aspect ratio between 0.35 and 2.8)
-            const isValidBlob = (b: ColorBlob) => {
-              const bw = b.maxX - b.minX + 1;
-              const bh = b.maxY - b.minY + 1;
-              const aspect = bw / Math.max(1, bh);
-              return b.count >= 3 && bw <= 26 && bh <= 26 && aspect >= 0.35 && aspect <= 2.8;
+            // Cluster Geometry & Overlap Splitting Filter:
+            // Eliminates single-pixel artifacts and resolves overlapping teammate icons (e.g. 2 CTs stacked in Mid)
+            const resolveClusters = (rawBlobs: ColorBlob[]) => {
+              const result: { cx: number; cy: number; count: number }[] = [];
+              for (const b of rawBlobs) {
+                const bw = b.maxX - b.minX + 1;
+                const bh = b.maxY - b.minY + 1;
+                const aspect = bw / Math.max(1, bh);
+                if (b.count < 3 || bw > 36 || bh > 36 || aspect < 0.28 || aspect > 3.5) continue;
+                
+                // If two players overlap tightly in a choke point (large blob count and wide box)
+                if (b.count >= 22 && (bw >= 16 || bh >= 16)) {
+                  if (bw >= bh) {
+                    const mid = (b.minX + b.maxX) / 2;
+                    result.push({ cx: b.minX * 0.7 + mid * 0.3, cy: b.sumY / b.count, count: Math.round(b.count / 2) });
+                    result.push({ cx: mid * 0.3 + b.maxX * 0.7, cy: b.sumY / b.count, count: Math.round(b.count / 2) });
+                  } else {
+                    const mid = (b.minY + b.maxY) / 2;
+                    result.push({ cx: b.sumX / b.count, cy: b.minY * 0.7 + mid * 0.3, count: Math.round(b.count / 2) });
+                    result.push({ cx: b.sumX / b.count, cy: mid * 0.3 + b.maxY * 0.7, count: Math.round(b.count / 2) });
+                  }
+                } else {
+                  result.push({ cx: b.sumX / b.count, cy: b.sumY / b.count, count: b.count });
+                }
+              }
+              return result.sort((a, b) => b.count - a.count).slice(0, 5);
             };
 
-            const validT = blobsT.filter(isValidBlob).sort((a, b) => b.count - a.count).slice(0, 5);
-            const validCT = blobsCT.filter(isValidBlob).sort((a, b) => b.count - a.count).slice(0, 5);
+            const validT = resolveClusters(blobsT);
+            const validCT = resolveClusters(blobsCT);
 
             // Render live zoomed radar crop preview
             if (roiCropCanvasRef.current) {
@@ -778,37 +802,35 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
                 // Draw landmark alignment guides on sensor preview if active
                 if (showAlignmentGuides) {
                   const landmarks = [
-                    { name: 'A', x: 0.43, y: 0.65, color: '#f59e0b' },
-                    { name: 'B', x: 0.70, y: 0.35, color: '#10b981' },
-                    { name: 'MID', x: 0.52, y: 0.45, color: '#38bdf8' },
+                    { name: 'B', normX: 0.232, normY: 0.277, color: '#10b981' },
+                    { name: 'MID', normX: 0.459, normY: 0.277, color: '#38bdf8' },
+                    { name: 'A', normX: 0.561, normY: 0.772, color: '#f59e0b' },
                   ];
                   landmarks.forEach((lm) => {
-                    const invX = ((lm.x - 0.5 - mapOffsetX) / mapScale + 0.5) * 140;
-                    const invY = ((lm.y - 0.5 - mapOffsetY) / mapScale + 0.5) * 140;
-                    if (invX >= 0 && invX <= 140 && invY >= 0 && invY <= 140) {
-                      cropCtx.strokeStyle = lm.color;
-                      cropCtx.lineWidth = 1;
-                      cropCtx.setLineDash([2, 2]);
-                      cropCtx.beginPath(); cropCtx.arc(invX, invY, 10, 0, 2 * Math.PI); cropCtx.stroke();
-                      cropCtx.setLineDash([]);
-                      cropCtx.fillStyle = lm.color;
-                      cropCtx.font = 'bold 9px monospace';
-                      cropCtx.fillText(`⌖${lm.name}`, invX - 6, invY - 12);
-                    }
+                    const cropX = lm.normX * 140;
+                    const cropY = lm.normY * 140;
+                    cropCtx.strokeStyle = lm.color;
+                    cropCtx.lineWidth = 1;
+                    cropCtx.setLineDash([2, 2]);
+                    cropCtx.beginPath(); cropCtx.arc(cropX, cropY, 10, 0, 2 * Math.PI); cropCtx.stroke();
+                    cropCtx.setLineDash([]);
+                    cropCtx.fillStyle = lm.color;
+                    cropCtx.font = 'bold 9px monospace';
+                    cropCtx.fillText(`⌖${lm.name}`, cropX - 6, cropY - 12);
                   });
                 }
 
                 validT.forEach((b) => {
-                  const px = (b.sumX / b.count / rw) * 140;
-                  const py = (b.sumY / b.count / rh) * 140;
+                  const px = (b.cx / rw) * 140;
+                  const py = (b.cy / rh) * 140;
                   cropCtx.fillStyle = '#f97316';
                   cropCtx.beginPath(); cropCtx.arc(px, py, 5, 0, 2 * Math.PI); cropCtx.fill();
                   cropCtx.strokeStyle = '#fff'; cropCtx.lineWidth = 1.5; cropCtx.stroke();
                 });
 
                 validCT.forEach((b) => {
-                  const px = (b.sumX / b.count / rw) * 140;
-                  const py = (b.sumY / b.count / rh) * 140;
+                  const px = (b.cx / rw) * 140;
+                  const py = (b.cy / rh) * 140;
                   cropCtx.fillStyle = '#06b6d4';
                   cropCtx.beginPath(); cropCtx.arc(px, py, 5, 0, 2 * Math.PI); cropCtx.fill();
                   cropCtx.strokeStyle = '#fff'; cropCtx.lineWidth = 1.5; cropCtx.stroke();
@@ -818,8 +840,8 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
 
             // Draw player crosshairs over the main video overlay
             validT.forEach((b, i) => {
-              const cx = rx + (b.sumX / b.count);
-              const cy = ry + (b.sumY / b.count);
+              const cx = rx + b.cx;
+              const cy = ry + b.cy;
               cvCtx.strokeStyle = '#f97316';
               cvCtx.lineWidth = 2;
               cvCtx.beginPath(); cvCtx.arc(cx, cy, 9, 0, 2 * Math.PI); cvCtx.stroke();
@@ -829,8 +851,8 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
             });
 
             validCT.forEach((b, i) => {
-              const cx = rx + (b.sumX / b.count);
-              const cy = ry + (b.sumY / b.count);
+              const cx = rx + b.cx;
+              const cy = ry + b.cy;
               cvCtx.strokeStyle = '#06b6d4';
               cvCtx.lineWidth = 2;
               cvCtx.beginPath(); cvCtx.arc(cx, cy, 9, 0, 2 * Math.PI); cvCtx.stroke();
@@ -844,10 +866,16 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
             const tPos: [number, number][] = [];
 
             validT.forEach((b, i) => {
-              const rawX = (b.sumX / b.count) / rw;
-              const rawY = (b.sumY / b.count) / rh;
-              const calX = Math.min(0.96, Math.max(0.04, (rawX - 0.5) * mapScale + 0.5 + mapOffsetX));
-              const calY = Math.min(0.96, Math.max(0.04, (rawY - 0.5) * mapScale + 0.5 + mapOffsetY));
+              const normX = b.cx / rw;
+              const normY = b.cy / rh;
+
+              // High-precision affine transform mapping minimap crop directly to de_mirage.png coordinates:
+              // Accounts for rectangular crop aspect ratio (1.337) and slight CS2 camera perspective
+              const baseCalX = 1.106 * normX - 0.056 * normY - 0.024;
+              const baseCalY = 0.015 * normX + 0.942 * normY + 0.002;
+
+              const calX = Math.min(0.96, Math.max(0.04, (baseCalX - 0.5) * mapScale + 0.5 + mapOffsetX));
+              const calY = Math.min(0.96, Math.max(0.04, (baseCalY - 0.5) * mapScale + 0.5 + mapOffsetY));
 
               const prev = prevPositionsRef.current.get(i) || { x: calX, y: calY };
               const smoothX = prev.x * 0.30 + calX * 0.70;
@@ -879,10 +907,14 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
             });
 
             validCT.forEach((b, i) => {
-              const rawX = (b.sumX / b.count) / rw;
-              const rawY = (b.sumY / b.count) / rh;
-              const calX = Math.min(0.96, Math.max(0.04, (rawX - 0.5) * mapScale + 0.5 + mapOffsetX));
-              const calY = Math.min(0.96, Math.max(0.04, (rawY - 0.5) * mapScale + 0.5 + mapOffsetY));
+              const normX = b.cx / rw;
+              const normY = b.cy / rh;
+
+              const baseCalX = 1.106 * normX - 0.056 * normY - 0.024;
+              const baseCalY = 0.015 * normX + 0.942 * normY + 0.002;
+
+              const calX = Math.min(0.96, Math.max(0.04, (baseCalX - 0.5) * mapScale + 0.5 + mapOffsetX));
+              const calY = Math.min(0.96, Math.max(0.04, (baseCalY - 0.5) * mapScale + 0.5 + mapOffsetY));
 
               const slot = 5 + i;
               const prev = prevPositionsRef.current.get(slot) || { x: calX, y: calY };
@@ -923,8 +955,8 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
               attCx = tPos.reduce((sum, p) => sum + p[0], 0) / tPos.length;
               attCy = tPos.reduce((sum, p) => sum + p[1], 0) / tPos.length;
             }
-            const distA = Math.hypot(attCx - 0.43, attCy - 0.65);
-            const distB = Math.hypot(attCx - 0.72, attCy - 0.35);
+            const distA = Math.hypot(attCx - 0.54, attCy - 0.74);
+            const distB = Math.hypot(attCx - 0.22, attCy - 0.27);
             const siteProbA = Math.round((distB / (distA + distB + 1e-6)) * 100) / 100;
             const predictedSite = siteProbA >= 0.5 ? 'SITE A' : 'SITE B';
 
@@ -1055,20 +1087,21 @@ export const VideoHub: React.FC<VideoHubProps> = ({ apiBase, wsBase }) => {
       ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(size, p); ctx.stroke();
     }
 
-    // Bombsite A and B markers on de_mirage
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
-    ctx.font = '900 15px monospace';
-    ctx.fillText('SITE A', size * 0.41, size * 0.65);
-    ctx.fillText('SITE B', size * 0.70, size * 0.35);
+    // Bombsite A and B markers on de_mirage (True map positions: A is bottom, B is top-left)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.font = '900 14px monospace';
+    ctx.fillText('SITE B', size * 0.22, size * 0.26);
+    ctx.fillText('SITE A', size * 0.54, size * 0.77);
 
     // Mirage Landmark Alignment Calibration Guides
     if (showAlignmentGuides) {
       const landmarks = [
-        { name: 'SITE A (BOMB)', x: 0.43, y: 0.65, color: '#f59e0b' },
-        { name: 'SITE B (BOMB)', x: 0.70, y: 0.35, color: '#10b981' },
-        { name: 'MID WINDOW', x: 0.52, y: 0.45, color: '#38bdf8' },
-        { name: 'T SPAWN', x: 0.24, y: 0.78, color: '#ea580c' },
-        { name: 'CT SPAWN', x: 0.82, y: 0.32, color: '#06b6d4' },
+        { name: 'SITE B (BOMB)', x: 0.223, y: 0.274, color: '#10b981' },
+        { name: 'MID WINDOW', x: 0.454, y: 0.269, color: '#38bdf8' },
+        { name: 'UNDERPASS', x: 0.415, y: 0.581, color: '#a855f7' },
+        { name: 'SITE A (BOMB)', x: 0.539, y: 0.737, color: '#f59e0b' },
+        { name: 'A RAMP', x: 0.732, y: 0.664, color: '#ea580c' },
+        { name: 'A PALACE', x: 0.864, y: 0.254, color: '#06b6d4' },
       ];
       landmarks.forEach((lm) => {
         const lx = lm.x * size;
