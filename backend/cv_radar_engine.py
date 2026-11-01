@@ -17,7 +17,7 @@ from scipy import ndimage
 from typing import Dict, List, Tuple, Any
 
 # Tactical OS modules
-from config import DT, UNITS_PER_NORM
+from config import DT
 from maps import load_walls, units_per_norm
 from features import frame_features, CELLS, GRID, blocked_by_walls
 from explain import load_models, Explainers, threat_sentence, win_sentence, tactical_directive

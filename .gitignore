@@ -1,15 +1,36 @@
+# Virtual Environment
 .venv/
-data/*
-!data/maps/
-!data/splits.csv
-models/*
+env/
+venv/
+
+# Dependencies & Build Artefacts
 node_modules/
-__pycache__/
-ingest_errors.log
-catboost_info/
-*.png
 dist/
 frontend/dist/
-deploy_data/
-scratch/
 
+# Python Cache & Training Logs
+__pycache__/
+*.py[cod]
+*.log
+ingest_errors.log
+catboost_info/
+
+# Scratch & Dev Utilities
+scratch/
+deploy_data/
+
+# Demos & Video Files (Excluded per user request)
+data/demos/
+*.dem
+data/videos/
+*.mp4
+*.webm
+*.mov
+*.avi
+*.mkv
+
+# Explicitly ensure models, maps, features and data splits are tracked
+!models/
+!models/**
+!data/maps/
+!data/splits.csv

@@ -1,0 +1,206 @@
+{
+  "project": "TRACE: Esports Tactical OS",
+  "generated_at": "2026-10-24T20:39:45.096323",
+  "execution_duration_sec": 52.94,
+  "dataset_summary": {
+    "total_matches": 15,
+    "train_matches": 9,
+    "val_matches": 3,
+    "test_matches": 3,
+    "ambush_train_samples": 420,
+    "ambush_val_samples": 100,
+    "ambush_test_samples": 220,
+    "win_train_frames": 153534,
+    "win_val_frames": 53532,
+    "win_test_frames": 75362
+  },
+  "ambush_model": {
+    "algorithm": "CatBoostClassifier (Gradient Boosted Decision Trees)",
+    "calibration": "Isotonic Regression",
+    "features_used": [
+      "hp_pct",
+      "armor_pct",
+      "weapon_dps",
+      "is_alive",
+      "team_power_idx",
+      "round_clock_norm",
+      "round_phase_enc",
+      "pos_x",
+      "pos_y",
+      "yaw_sin",
+      "yaw_cos",
+      "territory_control_pct",
+      "is_in_enemy_territory",
+      "min_enemy_dist",
+      "vel_x",
+      "vel_y",
+      "speed",
+      "accel_mag",
+      "speed_1s_mean",
+      "speed_3s_mean",
+      "n_enemies_visible",
+      "n_teammates_visible",
+      "max_enemy_los_dist",
+      "nearest_danger_score",
+      "degree",
+      "is_isolated",
+      "has_crossfire_partner",
+      "anchor_influence_score"
+    ],
+    "ablation_ladder": {
+      "T1 (Economy & State)": {
+        "pr_auc": 0.5587719298245615,
+        "roc_auc": 0.9242105263157895,
+        "features_count": 7
+      },
+      "T2 (+ Spatial & Territory)": {
+        "pr_auc": 0.7014285714285713,
+        "roc_auc": 0.9663157894736842,
+        "features_count": 14
+      },
+      "T3 (+ Kinematics / Movement)": {
+        "pr_auc": 0.8769230769230769,
+        "roc_auc": 0.983157894736842,
+        "features_count": 20
+      },
+      "T4 (+ Sightlines & Support Graph)": {
+        "pr_auc": 0.7302564102564102,
+        "roc_auc": 0.9747368421052631,
+        "features_count": 28
+      }
+    },
+    "validation_metrics": {
+      "total_samples": 100,
+      "positives": 5,
+      "negatives": 95,
+      "base_rate": 0.05,
+      "threshold": 0.5,
+      "accuracy": 0.97,
+      "precision": 0.6666666666666666,
+      "recall": 0.8,
+      "specificity": 0.9789473684210527,
+      "f1_score": 0.7272727272727273,
+      "roc_auc": 0.9873684210526317,
+      "pr_auc": 0.7575757575757576,
+      "log_loss": 0.052746918399762234,
+      "brier_score": 0.018000000000000002,
+      "ece": 0.0,
+      "confusion_matrix": {
+        "tp": 4,
+        "fp": 2,
+        "tn": 93,
+        "fn": 1
+      }
+    },
+    "test_metrics_default_th": {
+      "total_samples": 220,
+      "positives": 11,
+      "negatives": 209,
+      "base_rate": 0.05,
+      "threshold": 0.5,
+      "accuracy": 0.9454545454545454,
+      "precision": 0.4444444444444444,
+      "recall": 0.36363636363636365,
+      "specificity": 0.9760765550239234,
+      "f1_score": 0.4,
+      "roc_auc": 0.7829491083079599,
+      "pr_auc": 0.2593434343434343,
+      "log_loss": 0.3210917648940261,
+      "brier_score": 0.04228820152411398,
+      "ece": 0.027277348755646226,
+      "confusion_matrix": {
+        "tp": 4,
+        "fp": 5,
+        "tn": 204,
+        "fn": 7
+      }
+    },
+    "test_metrics_optimal_th": {
+      "total_samples": 220,
+      "positives": 11,
+      "negatives": 209,
+      "base_rate": 0.05,
+      "threshold": 0.20999999999999996,
+      "accuracy": 0.9454545454545454,
+      "precision": 0.4444444444444444,
+      "recall": 0.36363636363636365,
+      "specificity": 0.9760765550239234,
+      "f1_score": 0.4,
+      "roc_auc": 0.7829491083079599,
+      "pr_auc": 0.2593434343434343,
+      "log_loss": 0.3210917648940261,
+      "brier_score": 0.04228820152411398,
+      "ece": 0.027277348755646226,
+      "confusion_matrix": {
+        "tp": 4,
+        "fp": 5,
+        "tn": 204,
+        "fn": 7
+      }
+    }
+  },
+  "win_probability_model": {
+    "algorithm": "LightGBM (Light Gradient Boosting Machine)",
+    "calibration": "Isotonic Regression",
+    "features_used": [
+      "att_power",
+      "def_power",
+      "power_delta",
+      "att_alive",
+      "def_alive",
+      "alive_diff",
+      "round_clock_norm",
+      "bomb_planted",
+      "att_territory",
+      "centroid_speed",
+      "att_disp",
+      "def_disp"
+    ],
+    "validation_metrics": {
+      "total_samples": 53532,
+      "positives": 31013,
+      "negatives": 22519,
+      "base_rate": 0.5793357244265113,
+      "threshold": 0.5,
+      "accuracy": 0.7428640812971681,
+      "precision": 0.8576939029448362,
+      "recall": 0.666784896656241,
+      "specificity": 0.8476397708601625,
+      "f1_score": 0.7502857246521416,
+      "roc_auc": 0.8322507052865457,
+      "pr_auc": 0.8579687279441988,
+      "log_loss": 0.4657750241363006,
+      "brier_score": 0.15702773112240725,
+      "ece": 7.416124934595923e-06,
+      "confusion_matrix": {
+        "tp": 20679,
+        "fp": 3431,
+        "tn": 19088,
+        "fn": 10334
+      }
+    },
+    "test_metrics": {
+      "total_samples": 75362,
+      "positives": 39727,
+      "negatives": 35635,
+      "base_rate": 0.5271489610148351,
+      "threshold": 0.5,
+      "accuracy": 0.662044531726865,
+      "precision": 0.7318373983739838,
+      "recall": 0.5664661313464394,
+      "specificity": 0.7685982881998036,
+      "f1_score": 0.6386196915305703,
+      "roc_auc": 0.7541614160817638,
+      "pr_auc": 0.7623810942737776,
+      "log_loss": 0.6292796137784773,
+      "brier_score": 0.2094703147400475,
+      "ece": 0.07022170163869182,
+      "confusion_matrix": {
+        "tp": 22504,
+        "fp": 8246,
+        "tn": 27389,
+        "fn": 17223
+      }
+    }
+  }
+}
